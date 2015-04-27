@@ -25,6 +25,7 @@
 #include <dlfcn.h>
 #endif
 #include <stdio.h>
+#include <string.h>
 #include <assert.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -122,6 +123,10 @@ plumed_plumedmain_function_holder* plumed_kernel_register(const plumed_plumedmai
 #ifdef __PLUMED_HAS_DLOPEN
   char* path;
   void* p;
+  char* pc;
+  void* p_cre;
+  void* p_cmd;
+  void* p_fin;
   if(first && f==NULL) {
     path=getenv("PLUMED_KERNEL");
 #ifdef __PLUMED_DEFAULT_KERNEL
@@ -141,12 +146,42 @@ plumed_plumedmain_function_holder* plumed_kernel_register(const plumed_plumedmai
       fprintf(stderr,"+++ Loading the PLUMED kernel runtime +++\n");
       fprintf(stderr,"+++ PLUMED_KERNEL=\"%s\" +++\n",path);
       p=dlopen(path,RTLD_NOW|RTLD_GLOBAL);
-      if(p) {
-        fprintf(stderr,"+++ PLUMED kernel successfully loaded +++\n");
-        installed=1;
-      } else {
+      if(!p){
+/*
+  Something went wrong. We try to remove "Kernel" string from the PLUMED_KERNEL variable
+  and load directly the shared library.
+*/
+        pc=path;
+        while(*pc) pc++;
+        while(*pc!='K' && pc>path) pc--;
+        if(strcmp(pc,"Kernel")) {
+          memmove(pc, pc+6, strlen(pc)-5);
+        }
+        fprintf(stderr,"+++ An error occurred - message from dlopen(): %s\n",dlerror());
+        fprintf(stderr,"+++ Trying %s\n",path);
+        p=dlopen(path,RTLD_NOW|RTLD_LOCAL);
+        if(p) {
+          fprintf(stderr,"+++ done\n");
+          p_cre=dlsym(p,"plumedmain_create");
+          p_cmd=dlsym(p,"plumedmain_cmd");
+          p_fin=dlsym(p,"plumedmain_finalize");
+          assert(sizeof(p_cre)==sizeof(g.create));
+          memcpy(&g.create,&p_cre,sizeof(p_cre));
+          memcpy(&g.cmd,&p_cmd,sizeof(p_cmd));
+          memcpy(&g.finalize,&p_fin,sizeof(p_fin));
+          if(g.create==NULL || g.cmd==NULL || g.finalize==NULL) {
+            g.create=plumed_dummy_create;
+            g.cmd=plumed_dummy_cmd;
+            g.finalize=plumed_dummy_finalize;
+            p=NULL;
+            fprintf(stderr,"+++ Functions not found\n");
+          }
+        } else {
+          fprintf(stderr,"+++ An error occurred - message from dlopen(): %s\n",dlerror());
+        }
+      }
+      if(!p) {
         fprintf(stderr,"+++ PLUMED kernel not found ! +++\n");
-        fprintf(stderr,"+++ error message from dlopen(): %s\n",dlerror());
       }
     }
   }
