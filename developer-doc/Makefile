@@ -18,13 +18,12 @@ clean:
 coverage:
 	lcov -c -d ../src/ --output-file coverage.info
 # remove system headers:
-	lcov -r coverage.info "/opt/*" "/usr/*" -o coverage-tmp.info && mv coverage-tmp.info coverage.info
-# remove internal blas:
-	lcov -r coverage.info "*/blas/*.cpp" "*/blas/*.h" -o coverage-tmp.info && mv coverage-tmp.info coverage.info
-# remove internal lapack:
-	lcov -r coverage.info "*/lapack/*.cpp" "*/lapack/*.h" -o coverage-tmp.info && mv coverage-tmp.info coverage.info
-# remove internal molfile:
-	lcov -r coverage.info "*/molfile/*.cpp" "*/molfile/*.h" -o coverage-tmp.info && mv coverage-tmp.info coverage.info
-# remove internal lepton:
-	lcov -r coverage.info "*/lepton/*.cpp" "*/lepton/*.h" -o coverage-tmp.info && mv coverage-tmp.info coverage.info
+	lcov -r coverage.info "/opt/*" "/usr/*" -o coverage-full.info
+# remove other modules
+	lcov -o coverage.info -r coverage.info "*/blas/*.cpp" "*/blas/*.h" "*/lapack/*.cpp" "*/lapack/*.h" "*/molfile/*.cpp" "*/molfile/*.h" "*/lepton/*.cpp" "*/lepton/*.h"
+# generate coverage
 	genhtml -o coverage -t "plumed test coverage" coverage.info
+# keep only other modules
+	lcov -o coverage-others.info -e converage-full.info "*/blas/*.cpp" "*/blas/*.h" "*/lapack/*.cpp" "*/lapack/*.h" "*/molfile/*.cpp" "*/molfile/*.h" "*/lepton/*.cpp" "*/lepton/*.h"
+# generate coverage
+	genhtml -o coverage-others -t "plumed test coverage (other modules)" coverage-others.info
