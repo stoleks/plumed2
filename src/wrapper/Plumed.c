@@ -162,9 +162,15 @@ plumed_plumedmain_function_holder* plumed_kernel_register(const plumed_plumedmai
         p=dlopen(path,RTLD_NOW|RTLD_LOCAL);
         if(p) {
           fprintf(stderr,"+++ done\n");
-          p_cre=dlsym(p,"plumedmain_create");
-          p_cmd=dlsym(p,"plumedmain_cmd");
-          p_fin=dlsym(p,"plumedmain_finalize");
+          p_cre=dlsym(p,"plumed_plumedmain_create");
+          p_cmd=dlsym(p,"plumed_plumedmain_cmd");
+          p_fin=dlsym(p,"plumed_plumedmain_finalize");
+/*
+  This is a workaround for PLUMED version < 2.5
+*/
+          if(!p_cre) p_cre=dlsym(p,"plumedmain_create");
+          if(!p_cmd) p_cre=dlsym(p,"plumedmain_cmd");
+          if(!p_fin) p_cre=dlsym(p,"plumedmain_finalize");
           assert(sizeof(p_cre)==sizeof(g.create));
           memcpy(&g.create,&p_cre,sizeof(p_cre));
           memcpy(&g.cmd,&p_cmd,sizeof(p_cmd));
