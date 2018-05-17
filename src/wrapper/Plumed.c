@@ -146,11 +146,11 @@ plumed_plumedmain_function_holder* plumed_kernel_register(const plumed_plumedmai
       fprintf(stderr,"+++ Loading the PLUMED kernel runtime +++\n");
       fprintf(stderr,"+++ PLUMED_KERNEL=\"%s\" +++\n",path);
       p=dlopen(path,RTLD_NOW|RTLD_GLOBAL);
-      if(!p){
-/*
-  Something went wrong. We try to remove "Kernel" string from the PLUMED_KERNEL variable
-  and load directly the shared library.
-*/
+      if(!p) {
+        /*
+          Something went wrong. We try to remove "Kernel" string from the PLUMED_KERNEL variable
+          and load directly the shared library.
+        */
         pc=path;
         while(*pc) pc++;
         while(*pc!='K' && pc>path) pc--;
@@ -165,9 +165,9 @@ plumed_plumedmain_function_holder* plumed_kernel_register(const plumed_plumedmai
           p_cre=dlsym(p,"plumed_plumedmain_create");
           p_cmd=dlsym(p,"plumed_plumedmain_cmd");
           p_fin=dlsym(p,"plumed_plumedmain_finalize");
-/*
-  This is a workaround for PLUMED version < 2.5
-*/
+          /*
+            This is a workaround for PLUMED version < 2.5
+          */
           if(!p_cre) p_cre=dlsym(p,"plumedmain_create");
           if(!p_cmd) p_cre=dlsym(p,"plumedmain_cmd");
           if(!p_fin) p_cre=dlsym(p,"plumedmain_finalize");
