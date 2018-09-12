@@ -205,7 +205,7 @@ private:
   std::vector<NeighborList *> nlcom;
   std::vector<Vector> m_deriv;
   Tensor m_virial;
-  bool Svol,Sfac,cross,direct,doneigh,test,CompDer,com;
+  bool Svol,Sfac,cross,direct,doNeigh,test,CompDer,com;
 public:
   static void registerKeywords( Keywords& keys );
   PIV(const ActionOptions&);
@@ -256,7 +256,7 @@ PIV::PIV(const ActionOptions&ao):
   Sfac(false),
   cross(true),
   direct(true),
-  doneigh(false),
+  doNeigh(false),
   CompDer(false),
   com(false),
   test(false),
@@ -278,7 +278,6 @@ PIV::PIV(const ActionOptions&ao):
   dosort(std:: vector<bool>(Nlist)),
   nlcom(std:: vector<NeighborList *>(NLsize)),
   compos(std:: vector<Vector>(NLsize))
-//com2atoms(std:: vector<std:: vector<unsigned> >(Nlist))
 {
   log << "Starting PIV Constructor\n";
   unsigned rank=comm.Get_rank();
@@ -498,10 +497,10 @@ PIV::PIV(const ActionOptions&ao):
   }
 
   // Neighbour Lists option
-  parseFlag("NLIST",doneigh);
+  parseFlag("NLIST",doNeigh);
   nl.resize(Nlist);
   nl_skin.resize(Nlist);
-  if(doneigh) {
+  if(doNeigh) {
     std:: vector<double> nl_cut(Nlist,0.);
     std:: vector<int> nl_st(Nlist,0);
     parseVector("NL_CUTOFF",nl_cut);
@@ -753,7 +752,6 @@ void PIV::calculate()
   // Transform (and sort) the rPIV before starting the dynamics
   if (((prev_stp==-1) || (init_stp==1)) &&!CompDer) {
     if(prev_stp!=-1){init_stp=0;}
-    log << "Debug " << prev_stp << " " << init_stp << "\n";
     // Calculate the volume scaling factor
     if(Svol) {
       Fvol=cbrt(Vol0/getBox().determinant());
@@ -811,7 +809,7 @@ void PIV::calculate()
     log << "\n";
   }
   // Do the sorting only once per timestep to avoid building the PIV N times for N rPIV PDB structures!
-  if ((getStep()>prev_stp&&getStep()%updatePIV==0)||CompDer) {
+  if ((getStep()>prev_stp && getStep()%updatePIV==0) || CompDer) {
     if (CompDer) log << " Step " << getStep() << "  Computing Derivatives NON-SORTED PIV \n";
     //
     // build COMs from positions if requested
@@ -828,7 +826,7 @@ void PIV::calculate()
       }
     }
     // update neighbor lists when an atom moves out of the Neighbor list skin
-    if (doneigh) {
+    if (doNeigh) {
       bool doupdate=false;
       // For the first step build previous positions = actual positions
       if (prev_stp==-1) {
