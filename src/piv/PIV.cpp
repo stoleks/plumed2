@@ -1,5 +1,5 @@
 /* +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-Copyright (c) 2017 of Pipolo Silvio and Fabio Pietrucci.
+Copyright (c) 2018 of Pipolo Silvio, Alexandre Jedrecy and Fabio Pietrucci.
 
 The piv module is free software: you can redistribute it and/or modify
 it under the terms of the GNU Lesser General Public License as published by
@@ -14,6 +14,7 @@ GNU Lesser General Public License for more details.
 You should have received a copy of the GNU Lesser General Public License
 along with plumed.  If not, see <http://www.gnu.org/licenses/>.
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
+
 #include "colvar/Colvar.h"
 #include "colvar/ActionRegister.h"
 #include "core/PlumedMain.h"
@@ -176,13 +177,13 @@ When using PIV please cite \cite pipolo2017navigating .
 */
 //+ENDPLUMEDOC
 
-class PIV      : public Colvar
+class PIV : public Colvar
 {
 private:
   ForwardDecl<Stopwatch> stopwatch_fwd;
   /// The stopwatch that times the different parts of the calculation
   Stopwatch& stopwatch=*stopwatch_fwd;
-  bool m_pbc, m_serial, m_timer;
+  bool m_pbc, m_serial, m_timer, m_referenceIsInitialized, m_neighborIsInitialized;
   bool m_doScaleVolume, m_cross, m_direct, m_doNeighbor, m_test, m_computeDerivatives, m_centerOfMass;
   unsigned m_nPrecision, m_nAtomTypes, m_numberLists, m_neighborlistSize;
   int m_updatePIV;
@@ -245,6 +246,8 @@ PIV::PIV(const ActionOptions&ao):
   m_pbc(true),
   m_serial(false),
   m_timer(false),
+  m_referenceIsInitialized(false),
+  m_neighborIsInitialized(false),
   m_doScaleVolume(false),
   //Sfac(false),
   m_cross(true),
@@ -689,7 +692,6 @@ void PIV::calculate()
 {
   // Local varaibles
   static int prev_stp = -1;
-  static int init_stp = 1;
   static std::vector<std::vector<Vector> > prev_pos(m_numberLists);
   static std::vector<std::vector<double> > cPIV(m_numberLists);
   static std::vector<std::vector<int> > Atom0(m_numberLists);
@@ -705,10 +707,7 @@ void PIV::calculate()
   }
 
   // Transform (and sort) the rPIV before starting the dynamics
-  if (((prev_stp == -1) || (init_stp == 1)) && !m_computeDerivatives) {
-    if(prev_stp != -1) {
-      init_stp = 0;
-    }
+  if (!m_referenceIsInitialized && !m_computeDerivatives) {
     // Calculate the volume scaling factor
     if (m_doScaleVolume) {
       m_volumeFactor = cbrt(m_volume0 / getBox().determinant());
@@ -767,6 +766,7 @@ void PIV::calculate()
       }
       log.printf("       |%10i|%15i|%15i|%15i|\n", j, m_referencePIV[j].size(), lmt0, lmt1);
     }
+    m_referenceIsInitialized = true;
     log << "\n";
   } // building of the reference PIV 
 
@@ -791,7 +791,7 @@ void PIV::calculate()
     if (m_doNeighbor) {
       bool doupdate = false;
       // For the first step build previous positions = actual positions
-      if (prev_stp == -1) {
+      if (!m_neighborIsInitialized) {
         bool docom = m_centerOfMass;
         for (unsigned j = 0; j < m_numberLists; j++) {
           for (unsigned i = 0; i < nl[j]->getFullAtomList().size(); i++) {
@@ -804,6 +804,7 @@ void PIV::calculate()
             prev_pos[j].push_back(position);
           }
         }
+        m_neighborIsInitialized = true;
         doupdate = true;
       }
       // Decide whether to update lists based on atom displacement, every stride
