@@ -722,20 +722,27 @@ void PIV::calculate()
     m_switchingFunctions.resize(m_numberLists);
     std::string errors;
     for (unsigned j = 0; j < m_numberLists; j++) {
-      std::string num;
-      Tools::convert(j+1, num);
+      if(m_doScaleVolume) {
+        double r0;
+        std::vector<std::string> data = Tools::getWords(sw[j]);
+        data.erase(data.begin());
+        bool tmp = Tools::parse(data, "R_0", r0);
+        std::string old_r0; 
+        Tools::convert(r0, old_r0);
+        r0 *= m_volumeFactor;
+        std::string new_r0; 
+        Tools::convert(r0, new_r0);
+        std::size_t pos = sw[j].find("R_0");
+        sw[j].replace(pos + 4, old_r0.size(), new_r0);
+      } 
       m_switchingFunctions[j].set(sw[j], errors);
+      std::string num;
+      Tools::convert(j + 1, num);
       if (errors.length() != 0){
         error("problem reading SWITCH" + num + " keyword : " + errors );
       }
-      double r0 = m_switchingFunctions[j].get_r0();
-      if (m_doScaleVolume) {
-        r0 *= m_volumeFactor;
-      }
-      m_r00[j] = r0;
-      m_switchingFunctions[j].set_r0(r0);
+      m_r00[j] = m_switchingFunctions[j].get_r0();
       log << "  Swf: " << j << "  r0 = " << (m_switchingFunctions[j].description()).c_str() << " \n";
-      // if it causes any problem, take back old version of PIV for the switching function reading
     }
     //Transform and sort
     log << "Building Reference PIV Vector \n";
