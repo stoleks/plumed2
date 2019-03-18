@@ -129,21 +129,21 @@ When using PIV2 please cite \cite pipolo2017navigating .
 class PIV2 : public Colvar
 {
 public:
-  static void registerKeywords( Keywords& keys );
-  PIV2(const ActionOptions&);
-  ~PIV2();
+  static void registerKeywords ( Keywords& keys );
+  PIV2 (const ActionOptions&);
+  ~PIV2 ();
   // active methods:
-  virtual void calculate();
-  void checkFieldsAllowed() {}
+  virtual void calculate ();
+  void checkFieldsAllowed () {}
 private:
-  Vector distanceAB(Vector A, Vector B);
-  void setCutOff();
+  Vector distanceAB (Vector A, Vector B);
+  void setCutOff (bool cutOff);
 private:
   ForwardDecl<Stopwatch> stopwatch_fwd;
   /// The stopwatch that times the different parts of the calculation
   Stopwatch& stopwatch = *stopwatch_fwd;
   bool m_pbc, m_serial, m_timer, m_refIsIni, m_neighborIsIni; 
-  bool m_doCutOff, m_doScaleVolume, m_cross, m_direct, m_doNeighbor;
+  bool m_doScaleVolume, m_cross, m_direct, m_doNeighbor;
   bool m_doTest, m_computeDerivatives, m_centerOfMass;
   unsigned m_nPrecision, m_nAtomTypes, m_numberBlocks; //, m_neighborListSize, 
   unsigned m_numberReferences, m_updatePIV2;
@@ -172,37 +172,37 @@ PLUMED_REGISTER_ACTION(PIV2,"PIV2")
 void PIV2::registerKeywords( Keywords& keys )
 {
   Colvar::registerKeywords( keys );
-  keys.add("numbered", "SWITCH", "The switching functions parameter."
+  keys.add ("numbered", "SWITCH", "The switching functions parameter."
            "You should specify a Switching function for all PIV2 blocks."
            "Details of the various switching "
            "functions you can use are provided on \\ref switchingfunction.");
-  keys.add("numbered", "REF_FILE", "PDB file name that contains the i-th reference structure.");
-  keys.add("compulsory", "N_REFERENCE", "The number of reference structure."
-           "It should match with the number of REF_FILE");
-  keys.add("compulsory", "PRECISION", "the precision for approximating reals with integers in sorting.");
-  keys.add("compulsory", "PIV2ATOMS", "Number of atoms to use for PIV2.");
-  keys.add("compulsory", "SORT", "Whether to sort or not the PIV2 block.");
-  keys.add("compulsory", "ATOMTYPES", "The atomtypes to use for PIV2.");
-  keys.add("optional", "SFACTOR", "Scale the PIV2-distance by such block-specific factor");
-  keys.add("optional", "VOLUME", "Scale atom-atom distances by the cubic root of the cell volume. The input volume is used to scale the R_0 value of the switching function. ");
-  keys.add("optional", "UPDATEPIV2", "Frequency (timesteps) at which the PIV2 is updated.");
-  keys.add("optional", "NL_CUTOFF", "Neighbour lists cutoff.");
-  keys.add("optional", "NL_STRIDE", "Update neighbour lists every NL_STRIDE steps.");
-  keys.add("optional", "NL_SKIN", "The maximum atom displacement tolerated for the neighbor lists update.");
-  keys.addFlag("TEST", false, "Print the actual and reference PIV2 and exit");
-  keys.addFlag("COM", false, "Use centers of mass of groups of atoms instead of atoms as secified in the Pdb file");
-  keys.addFlag("ONLYCROSS", false, "Use only cross-terms (A-B, A-C, B-C, ...) in PIV2");
-  keys.addFlag("ONLYDIRECT", false, "Use only direct-terms (A-A, B-B, C-C, ...) in PIV2");
-  keys.addFlag("DERIVATIVES", false, "Activate the calculation of the PIV2 for every class (needed for numerical derivatives).");
-  keys.addFlag("NLIST", false, "Use a neighbour list for distance calculations.");
-  keys.addFlag("SERIAL", false, "Perform the calculation in serial - for debug purpose");
-  keys.addFlag("TIMER", false, "Permorm timing analysis on heavy loops.");
-  keys.addFlag("CUTOFF", false, "Use cut-off to reduce the computational cost of the PIV.");
-  keys.reset_style("SWITCH", "compulsory");
-  componentsAreNotOptional(keys);
+  keys.add ("numbered", "REF_FILE", "PDB file name that contains the i-th reference structure."
+           "If you indicate n reference structure, you will get d_n PIV distances that can be used.");
+  keys.add ("compulsory", "SORT", "Whether to sort or not the PIV2 block.");
+  keys.add ("compulsory", "ATOMTYPES", "The atomtypes to use for PIV2.");
+  keys.add ("optional", "PRECISION", "the precision for approximating reals with integers in sorting.");
+  keys.add ("optional", "SFACTOR", "Scale the PIV2-distance by such block-specific factor");
+  keys.add ("optional", "VOLUME", "Scale atom-atom distances by the cubic root of the cell volume."
+           "The input volume is used to scale the R_0 value of the switching function. ");
+  keys.add ("optional", "UPDATEPIV2", "Frequency (timesteps) at which the PIV2 is updated.");
+  keys.add ("optional", "NL_CUTOFF", "Neighbour lists cutoff.");
+  keys.add ("optional", "NL_STRIDE", "Update neighbour lists every NL_STRIDE steps.");
+  keys.add ("optional", "NL_SKIN", "The maximum atom displacement tolerated for the neighbor lists update.");
+  keys.addFlag ("TEST", false, "Print the actual and reference PIV2 and exit");
+  keys.addFlag ("COM", false, "Use centers of mass of groups of atoms instead of atoms as secified in the Pdb file");
+  keys.addFlag ("ONLYCROSS", false, "Use only cross-terms (A-B, A-C, B-C, ...) in PIV2");
+  keys.addFlag ("ONLYDIRECT", false, "Use only direct-terms (A-A, B-B, C-C, ...) in PIV2");
+  keys.addFlag ("DERIVATIVES", false, "Activate the calculation of the PIV2 for every class"
+               "(needed for numerical derivatives).");
+  keys.addFlag ("NO_NLIST", false, "Don't use a neighbour list for distance calculations.");
+  keys.addFlag ("SERIAL", false, "Perform the calculation in serial - for debug purpose");
+  keys.addFlag ("TIMER", false, "Permorm timing analysis on heavy loops.");
+  keys.addFlag ("NO_CUTOFF", false, "Don't use cut-off to reduce the computational cost of the PIV.");
+  keys.reset_style ("SWITCH", "compulsory");
+  componentsAreNotOptional (keys);
   // output
-  keys.addOutputComponent("lambda", "default", "optimal lambda needed for the pathCV");
-  keys.addOutputComponent("di", "default", "PIV distance between the i-th"
+  keys.addOutputComponent ("lambda", "default", "optimal lambda needed for the pathCV");
+  keys.addOutputComponent ("di", "default", "PIV distance between the i-th"
                           " reference state and the current state");
 }
 
@@ -211,58 +211,60 @@ void PIV2::registerKeywords( Keywords& keys )
 //---------------------------------------------------------
 
 PIV2::PIV2(const ActionOptions&ao):
-  PLUMED_COLVAR_INIT(ao),
-  m_pbc(true),
-  m_serial(false),
-  m_timer(false),
-  m_refIsIni(false),
-  m_neighborIsIni(false),
-  m_doScaleVolume(false),
-  m_cross(true),
-  m_direct(true),
-  m_doNeighbor(false),
-  m_doTest(false),
-  m_computeDerivatives(false),
-  m_centerOfMass(false),
-  m_nPrecision(1000),
-  m_nAtomTypes(1),
-  // m_neighborListSize(1),
-  m_numberReferences(1),
-  m_updatePIV2(1),
-  m_volumeFactor(1.),
-  m_volume0(1.),
-  m_lambda(1.)
+  PLUMED_COLVAR_INIT (ao),
+  m_pbc (true),
+  m_serial (false),
+  m_timer (false),
+  m_refIsIni (false),
+  m_neighborIsIni (false),
+  m_doScaleVolume (false),
+  m_cross (true),
+  m_direct (true),
+  m_doNeighbor (true),
+  m_doTest (false),
+  m_computeDerivatives (false),
+  m_centerOfMass (false),
+  m_nPrecision (1000),
+  m_numberReferences (0),
+  m_updatePIV2 (1),
+  m_volumeFactor (1.),
+  m_volume0 (1.),
+  m_lambda (1.),
+  m_neighborList (std::vector<NeighborList*> (1)),
+  m_neighborlistCOM (std::vector<NeighborList*> (1))
 {
   log << "Starting PIV2 Constructor\n";
-  bool onlyCross = false, onlyDirect = false, noPbc = !m_pbc;
+  bool onlyCross = false, onlyDirect = false, noPbc = !m_pbc, noNeighbor = !m_doNeighbor, noCut = false;
 
   // parse all the mandatory inputs that are not vector
-  parse("VOLUME", m_volume0);
-  parse("PIV2ATOMS", m_nAtomTypes);
-  parse("PRECISION", m_nPrecision);
-  parse("N_REFERENCE", m_numberReferences);
+  parse ("VOLUME", m_volume0);
   // parse all the options
-  parseFlag("TEST", m_doTest);
-  parseFlag("NOPBC", noPbc);
-  parseFlag("TIMER", m_timer);
-  parseFlag("SERIAL", m_serial);
-  parseFlag("NLIST", m_doNeighbor);
-  parseFlag("CUTOFF", m_doCutOff);
-  parseFlag("ONLYCROSS", onlyCross);
-  parseFlag("ONLYDIRECT", onlyDirect);
-  parseFlag("COM", m_centerOfMass);
-  parseFlag("DERIVATIVES", m_computeDerivatives);
-  // parse the atom names 
-  std::vector<std::string> atomTypes(m_nAtomTypes);
-  parseVector("ATOMTYPES", atomTypes);
+  parseFlag ("TEST", m_doTest);
+  parseFlag ("NOPBC", noPbc);
+  parseFlag ("TIMER", m_timer);
+  parseFlag ("SERIAL", m_serial);
+  parseFlag ("NO_NLIST", noNeighbor);
+  parseFlag ("NO_CUTOFF", noCut);
+  parseFlag ("ONLYCROSS", onlyCross);
+  parseFlag ("ONLYDIRECT", onlyDirect);
+  parseFlag ("COM", m_centerOfMass);
+  parseFlag ("DERIVATIVES", m_computeDerivatives);
 
+  // parse the atom names 
+  std::vector <std::string> atomTypes;
+  parseVector ("ATOMTYPES", atomTypes);
+  m_nAtomTypes = atomTypes.size();
   // Stride for which the PIV are computed
-  if (keywords.exists("UPDATEPIV2")){
-    parse("UPDATEPIV2", m_updatePIV2);
+  if (keywords.exists ("UPDATEPIV2")) {
+    parse ("UPDATEPIV2", m_updatePIV2);
   }
   // Precision on the real-to-integer transformation for the sorting
+  if (keywords.exists ("PRECISION")) {
+    parse ("PRECISION", m_nPrecision);
+  }
+  log << "Precision N = " << m_nPrecision << "\n";
   if (m_nPrecision < 2) { 
-    error("Precision must be => 2");
+    error ("Precision must be => 2");
   }
   // PBC
   m_pbc = !noPbc;
@@ -316,26 +318,22 @@ PIV2::PIV2(const ActionOptions&ao):
   }
 
   // resizing all class vector according to m_numberBlocks
-  m_distancePIV2.resize(m_numberReferences);
-  m_refPIV2.resize(m_numberReferences);
-  for (unsigned iRef = 0; iRef < m_numberReferences; iRef++) {
-    m_refPIV2[iRef].resize(m_numberBlocks);
-  }
-  m_doSort.resize(m_numberBlocks);
-  m_blockScaling.resize(m_numberBlocks);
-  m_r00.resize(m_numberBlocks);
-  m_switchData.resize(m_numberBlocks); 
-  m_neighborList.resize(m_numberBlocks);
-  m_neighborListSkin.resize(m_numberBlocks);
-  m_prevPosition.resize(m_numberBlocks);
+  m_doSort.resize (m_numberBlocks);
+  m_blockScaling.resize (m_numberBlocks);
+  m_r00.resize (m_numberBlocks);
+  m_switchData.resize (m_numberBlocks); 
+  m_neighborListSkin.resize (m_numberBlocks);
+  m_prevPosition.resize (m_numberBlocks);
+  m_neighborList.resize (m_numberBlocks);
 
   // setting neighborlist parameters 
   std::vector<double> neighborListCut(m_numberBlocks, 0.);
   std::vector<int> neighborListStride(m_numberBlocks, 0);
+  m_doNeighbor = !noNeighbor;
   if (m_doNeighbor) {
-    parseVector("NL_CUTOFF", neighborListCut);
-    parseVector("NL_STRIDE", neighborListStride);
-    parseVector("NL_SKIN", m_neighborListSkin);
+    parseVector ("NL_CUTOFF", neighborListCut);
+    parseVector ("NL_STRIDE", neighborListStride);
+    parseVector ("NL_SKIN", m_neighborListSkin);
     for (unsigned iBlock = 0; iBlock < m_numberBlocks; iBlock++) {
       if (neighborListCut[iBlock] <= 0.0) {
         error("NL_CUTOFF should be explicitly specified and positive");
@@ -356,7 +354,7 @@ PIV2::PIV2(const ActionOptions&ao):
 
   // Sorting
   std::vector<unsigned> yesNoSort(m_numberBlocks);
-  parseVector("SORT", yesNoSort);
+  parseVector ("SORT", yesNoSort);
   for (unsigned iBlock = 0; iBlock < m_numberBlocks; iBlock++) {
     if (yesNoSort[iBlock] == 0 || m_computeDerivatives) {
       m_doSort[iBlock] = false;
@@ -373,7 +371,7 @@ PIV2::PIV2(const ActionOptions&ao):
     m_blockScaling[iBlock] = 1.;
   }
   if (keywords.exists("SFACTOR")) {
-    parseVector("SFACTOR", m_blockScaling);
+    parseVector ("SFACTOR", m_blockScaling);
   }
 
   // read parameters and set-up switching functions here only if computing derivatives
@@ -388,8 +386,8 @@ PIV2::PIV2(const ActionOptions&ao):
     m_switchFunc.resize(m_numberBlocks);
     std::string errors;
     for (unsigned iBlock = 0; iBlock < m_numberBlocks; iBlock++) {
-     // std::string num;
-     // Tools::convert(iBlock + 1, num);
+      // std::string num;
+      // Tools::convert(iBlock + 1, num);
       m_switchFunc[iBlock].set(m_switchData[iBlock], errors);
       if (errors.length() != 0){
         error("problem reading switch" + std::to_string(iBlock + 1) + " keyword : " + errors );
@@ -400,16 +398,16 @@ PIV2::PIV2(const ActionOptions&ao):
   }
 
   // set the cut-off
-  setCutOff();
+  setCutOff (!noCut);
 
   // Reference PDB file 
-  for (unsigned iRef = 0; iRef < m_numberReferences; iRef++) {
+  for (unsigned iRef = 0; ; iRef++) {
     std::string referenceFile; 
-    if ( !parseNumbered("REF_FILE", iRef + 1, referenceFile) ){
-      log << "Error while trying to read reference " << iRef << " " 
-          << referenceFile << "\n";
+    parseNumbered("REF_FILE", iRef + 1, referenceFile);
+    if (referenceFile.empty()) {
       break;
-    } 
+    }
+    m_numberReferences++;
     log << "\n----- Reference " << iRef + 1 << " -----\n"; 
 
     // opening of the reference PBD file
@@ -522,12 +520,13 @@ PIV2::PIV2(const ActionOptions&ao):
       }
       // WARNING: is neighborListCut meaningful here?
       m_neighborListAll= new NeighborList(listAllAtom, m_pbc, getPbc(),
-                               neighborListCut[0], neighborListStride[0]);
-      //if (m_centerOfMass) {
-      for (unsigned i = 0; i < m_positionCOM.size(); i++) {
-        // WARNING: is neighborListCut meaningful here?
-        m_neighborlistCOM[i] = new NeighborList(comAtoms[i], m_pbc, getPbc(),
+                             neighborListCut[0], neighborListStride[0]);
+      if (m_centerOfMass) {
+        for (unsigned i = 0; i < m_positionCOM.size(); i++) {
+          // WARNING: is neighborListCut meaningful here?
+          m_neighborlistCOM[i] = new NeighborList(comAtoms[i], m_pbc, getPbc(),
                                      neighborListCut[0], neighborListStride[0]);
+        }
       }
       unsigned ncnt = 0;
       // Direct blocks AA, BB, CC, ...
@@ -536,7 +535,7 @@ PIV2::PIV2(const ActionOptions&ao):
             << "types: " << m_nAtomTypes << "\n";
         for (unsigned iType = 0; iType < m_nAtomTypes; iType++) {
           m_neighborList[ncnt] = new NeighborList(pairList[iType], m_pbc, getPbc(),
-                                       neighborListCut[iType], neighborListStride[iType]);
+                                     neighborListCut[iType], neighborListStride[iType]);
           ncnt += 1;
         }
       }
@@ -547,8 +546,8 @@ PIV2::PIV2(const ActionOptions&ao):
         for (unsigned iType1 = 0; iType1 < m_nAtomTypes; iType1++) {
           for (unsigned iType2 = iType1 + 1; iType2 < m_nAtomTypes; iType2++) {
             m_neighborList[ncnt] = new NeighborList(pairList[iType1], pairList[iType2],
-                                         false, m_pbc, getPbc(),
-                                         neighborListCut[ncnt], neighborListStride[ncnt]);
+                                       false, m_pbc, getPbc(),
+                                       neighborListCut[ncnt], neighborListStride[ncnt]);
             ncnt += 1;
           }
         }
@@ -616,10 +615,9 @@ PIV2::PIV2(const ActionOptions&ao):
       }
     }
     // build the rPIV2 distances (transformation and sorting is done afterwards)
-    if (m_computeDerivatives) {
-      log << "  PIV2  |  block   |     Size      |     Zeros     |     Ones      |" << " \n";
-    }
+    std::vector<std::vector<double>> refPIV;
     for(unsigned iBlock = 0; iBlock < m_numberBlocks; iBlock++) {
+      std::vector<double> blockRefPIV;
       for(unsigned iNl = 0; iNl < m_neighborList[iBlock]->size(); iNl++) {
         unsigned i0 = (m_neighborList[iBlock]->getClosePairAtomNumber(iNl).first).index();
         unsigned i1 = (m_neighborList[iBlock]->getClosePairAtomNumber(iNl).second).index();
@@ -643,12 +641,17 @@ PIV2::PIV2(const ActionOptions&ao):
         // Transformation and sorting done at the first timestep to solve the r0 definition issue
         if (pairDist.modulo2() < m_cutOff[iBlock] * m_cutOff[iBlock]) {
           if (m_computeDerivatives) {
-            m_refPIV2[iRef][iBlock].push_back(m_switchFunc[iBlock].calculate(pairDist.modulo() * m_volumeFactor, df));
+            blockRefPIV.push_back (m_switchFunc[iBlock].calculate (pairDist.modulo() * m_volumeFactor, df) );
           } else {
-            m_refPIV2[iRef][iBlock].push_back(pairDist.modulo() * m_volumeFactor);
+            blockRefPIV.push_back (pairDist.modulo () * m_volumeFactor);
           }
         }
       }
+      refPIV.push_back (blockRefPIV);
+    }
+    m_refPIV2.push_back (refPIV);
+    
+    for (unsigned iBlock = 0; iBlock < m_numberBlocks; iBlock++) {
       log << "reference PIV block " << iBlock + 1 << " has size: " 
           << m_refPIV2[iRef][iBlock].size() << " over a total of "
            << m_neighborList[iBlock]->size() << " atoms-atoms pair\n";
@@ -662,11 +665,16 @@ PIV2::PIV2(const ActionOptions&ao):
           if (m_refPIV2[iRef][iBlock][iAtm] > 0.9) { lmt1++; }
           if (m_refPIV2[iRef][iBlock][iAtm] < 0.1) { lmt0++; }
         }
+        if (m_computeDerivatives && iBlock == 0) {
+          log << "  PIV2  |  block   |     Size      |     Zeros     |     Ones      |" << " \n";
+        }
         log.printf("       |%10i|%15i|%15i|%15i|\n", iBlock, m_refPIV2[iRef][iBlock].size(), lmt0, lmt1);
       } // if we compute derivatives
     } // loop over the number of blocks
   } // loop over the number of references states
   log << "\n";
+
+  m_distancePIV2.resize (m_numberReferences);
 
   checkRead();
 
@@ -688,14 +696,14 @@ PIV2::PIV2(const ActionOptions&ao):
 // DESTRUCTOR
 //---------------------------------------------------------
 
-PIV2::~PIV2()
+PIV2::~PIV2 ()
 {
   for (unsigned iBlock = 0; iBlock < m_numberBlocks; iBlock++) {
     delete m_neighborList[iBlock];
   }
   if (m_centerOfMass) {
-    for (unsigned iBlock = 0; iBlock < m_numberBlocks; iBlock++) {
-      delete m_neighborlistCOM[iBlock];
+    for (unsigned i = 0; i < m_neighborlistCOM.size(); i++) {
+      delete m_neighborlistCOM[i];
     }
   }
   delete m_neighborListAll;
@@ -705,7 +713,8 @@ PIV2::~PIV2()
 // CUT-OFF
 //---------------------------------------------------------
 
-void PIV2::setCutOff(){
+void PIV2::setCutOff (bool doCutOff) 
+{
   // just resolves the equation swf(x) = 1 / nPrecision for all switching functions
   for (unsigned iBlock = 0; iBlock < m_numberBlocks; iBlock++){
     SwitchingFunction switchFunc;
@@ -716,7 +725,7 @@ void PIV2::setCutOff(){
     }
 
     log << "For block " << iBlock + 1;
-    if (m_doCutOff) {
+    if (doCutOff) {
       unsigned maxIteration = 0;
       double f, g, df;
       double espilon = 1. / double(m_nPrecision);
@@ -747,12 +756,12 @@ void PIV2::setCutOff(){
 // DISTANCE 
 //---------------------------------------------------------
 
-inline Vector PIV2::distanceAB(Vector A, Vector B)
+inline Vector PIV2::distanceAB (Vector A, Vector B)
 {
   if (m_pbc) {
-    return pbcDistance(A, B);
+    return pbcDistance (A, B);
   } else {
-    return delta(A, B);
+    return delta (A, B);
   }
 }
 
@@ -780,6 +789,7 @@ void PIV2::calculate()
     m_volumeFactor = cbrt(m_volume0 / getBox().determinant());
   }
 
+  ///////////////////////////////////////////////////////////////////
   // Transform (and sort) the rPIV2 before starting the dynamics
   if (!m_refIsIni && !m_computeDerivatives) {
     // Calculate the volume scaling factor
@@ -798,7 +808,7 @@ void PIV2::calculate()
           data.erase(data.begin());
           // reading old r0
           double r0;
-          if (!Tools::parse(data, "R_0", r0)) {
+          if (!Tools::parse (data, "R_0", r0)) {
             log << "Error with the R_0 parameter of the switching function\n";
           }
           std::string sR0; 
@@ -806,7 +816,6 @@ void PIV2::calculate()
           // computing new r0
           r0 *= m_volumeFactor;
           auto pos = m_switchData[iBlock].find("R_0");
-          //m_switchData[iBlock].replace(pos + 4, std::to_string(r0).size(), std::to_string(r0));
           m_switchData[iBlock].replace(pos + 4, sR0.size(), std::to_string(r0));
         }
         m_switchFunc[iBlock].set(m_switchData[iBlock], errors);
@@ -862,10 +871,21 @@ void PIV2::calculate()
     log << "\n";
   } // building of the reference PIV2 
 
+  ///////////////////////////////////////////////////////////////////
   // Do the sorting with a stride defined by updatePIV2 
   if (getStep() % m_updatePIV2 == 0 || m_computeDerivatives) {
     if (m_computeDerivatives) {
       log << " Step " << getStep() << "  Computing Derivatives NON-SORTED PIV2 \n";
+    }
+
+    // set to zero PIV2distance, derivatives and virial when they are calculated
+    for(unsigned j = 0; j < m_deriv.size(); j++) {
+      for(unsigned k = 0; k < 3; k++) {
+        m_deriv[j][k] = 0.;
+        if (j < 3) { 
+          m_virial[j][k] = 0.;
+        }
+      }
     }
 
     // build COMs from positions if requested
@@ -887,6 +907,8 @@ void PIV2::calculate()
     if (m_doNeighbor) {
       // for first step list = actual position
       if (!m_neighborIsIni) {
+        log << "Initializing neighbor list... Number of blocks: " 
+            << m_neighborList.size() << ", number of atoms:\n";
         for (unsigned iBlock = 0; iBlock < m_numberBlocks; iBlock++) {
           for (unsigned iAtm = 0; iAtm < m_neighborList[iBlock]->getFullAtomList().size(); iAtm++) {
             Vector position;
@@ -898,6 +920,8 @@ void PIV2::calculate()
             m_prevPosition[iBlock].push_back(position);
           }
           m_neighborList[iBlock]->update(m_prevPosition[iBlock]);
+          log << "   - for block " << iBlock + 1 <<  ": " 
+              << m_neighborList[iBlock]->getFullAtomList().size() << "\n";
         }
         m_neighborIsIni = true;
       }
@@ -905,6 +929,7 @@ void PIV2::calculate()
       // Decide whether to update lists based on atom displacement, every stride
       if (getStep() % m_neighborListAll->getStride() == 0) {
         bool doUpdate = false;
+        std::vector< std::vector<Vector>> updatedPos (m_numberBlocks);
         for (unsigned iBlock = 0; iBlock < m_numberBlocks; iBlock++) {
           for (unsigned iAtm = 0; iAtm < m_neighborList[iBlock]->getFullAtomList().size(); iAtm++) {
             Vector position;
@@ -916,24 +941,34 @@ void PIV2::calculate()
             if (pbcDistance(position, m_prevPosition[iBlock][iAtm]).modulo2()
                 >= m_neighborListSkin[iBlock] * m_neighborListSkin[iBlock]) {
               doUpdate = true;
-              m_prevPosition[iBlock][iAtm] = position;
+              // m_prevPosition[iBlock][iAtm] = position;
             }
+            updatedPos[iBlock].push_back (position);
           }
           // update positions if needed
           if (doUpdate == true) {
+            m_prevPosition = updatedPos;
+            /*
+            for (unsigned iBlock = 0; iBlock < m_numberBlocks; iBlock++) {
+              for (unsigned iAtm = 0; iAtm < m_neighborList[iBlock]->getFullAtomList().size(); iAtm++) {
+                m_prevPosition[iBlock][iAtm] = updatedPos[iBlock][iAtm];
+              }
+            }
+            */
             m_neighborList[iBlock]->update(m_prevPosition[iBlock]);
-            if (getStep() % 10000 == 0) {
+            if (getStep() % 50000 == 0) {
               if (iBlock == 0) 
                 log << "  Step " << getStep() << " neighbour lists updated for block ";
               log << iBlock + 1 << ": " << m_neighborList[iBlock]->size() << "; ";
             }
           }
         } // for each block
-        if (getStep() % 10000 == 0) log << "\n";
+        if (getStep() % 50000 == 0) log << "\n";
       } // if step % nlStride == 0
     } // if do neighbor 
 
     Vector pairDist;
+    Vector deriv;
     // Build "neigborlist" PIV2 blocks
     for(unsigned iBlock = 0; iBlock < m_numberBlocks; iBlock++) {
       if (m_doSort[iBlock]) {
@@ -957,26 +992,26 @@ void PIV2::calculate()
             position0 = m_positionCOM[i0];
             position1 = m_positionCOM[i1];
           } else {
-            position0 = getPosition(i0);
-            position1 = getPosition(i1);
+            position0 = getPosition (i0);
+            position1 = getPosition (i1);
           }
-          pairDist = distanceAB(position0, position1);
+          pairDist = distanceAB (position0, position1);
           double df = 0.;
           //Transforming distances with the Switching function + real to integer transformation
-          if (pairDist.modulo2() < m_cutOff[iBlock]*m_cutOff[iBlock]) {
-            int vecInt = int(m_switchFunc[iBlock].calculate(pairDist.modulo() * m_volumeFactor, df)
+          if (pairDist.modulo2() < m_cutOff[iBlock] * m_cutOff[iBlock]) {
+            int vecInt = int (m_switchFunc[iBlock].calculate(pairDist.modulo() * m_volumeFactor, df)
                              * double(m_nPrecision - 1) + 0.5);
             //Integer transformed distance values as index of the Ordering Vector orderVec
             orderVec[vecInt] += 1;
             //Keeps track of atom indices for force and virial calculations
-            atmPrecI0[vecInt].push_back(i0);
-            atmPrecI1[vecInt].push_back(i1);
+            atmPrecI0[vecInt].push_back (i0);
+            atmPrecI1[vecInt].push_back (i1);
           } else {
             int vecInt = 0;
             orderVec[vecInt] += 1;
             //Keeps track of atom indices for force and virial calculations
-            atmPrecI0[vecInt].push_back(i0);
-            atmPrecI1[vecInt].push_back(i1);
+            atmPrecI0[vecInt].push_back (i0);
+            atmPrecI1[vecInt].push_back (i1);
           }
         }
          
@@ -1074,11 +1109,17 @@ void PIV2::calculate()
         } // if serial or parallel
       } // if we sort the PIV
     } // for each block
+
+    // compute PIV-PIV distance and derivatives for each reference
+    for (unsigned iRef = 0; iRef < m_numberReferences; iRef++) {
+      m_distancePIV2[iRef] = 0.;
+    }
   } // if step % stride == 0
 
   Vector distance;
   double dfunc = 0.;
 
+  ///////////////////////////////////////////////////////////////////
   // This test may be run by specifying the TEST keyword as input, it pritnts referencePIV2 and cPIV2 and quits
   if (m_doTest) {
     unsigned limit = 0;
@@ -1130,6 +1171,8 @@ void PIV2::calculate()
   
   if (m_timer) stopwatch.start("4 Build For Derivatives");
 
+  ///////////////////////////////////////////////////////////////////
+  // compute derivatives 
   if (getStep() % m_updatePIV2 == 0) {
     // set to zero PIV2distance, derivatives and virial when they are calculated
     for(unsigned j = 0; j < m_deriv.size(); j++) {
@@ -1149,7 +1192,7 @@ void PIV2::calculate()
         } else {
           limit = m_refPIV2[iRef][iBlock].size();
         }
-        unsigned procByCore = unsigned(limit / stride + 1);
+        unsigned procByCore = unsigned (limit / stride + 1);
         for (unsigned i = rank * procByCore; (i < ((rank + 1) * procByCore)) && (i < limit); i++) {
           unsigned i0 = 0;
           unsigned i1 = 0;
@@ -1168,12 +1211,14 @@ void PIV2::calculate()
             position0 = getPosition(i0);
             position1 = getPosition(i1);
           }
-          distance = distanceAB(position0, position1);
+          distance = distanceAB (position0, position1);
           dfunc = 0.;
           // this is needed for dfunc and dervatives
           double dm = distance.modulo();
-          double tPIV2 = m_switchFunc[iBlock].calculate(dm * m_volumeFactor, dfunc);
-          
+          double tPIV2 = 0.;
+          if (dm < m_cutOff[iBlock]) {
+            tPIV2 = m_switchFunc[iBlock].calculate(dm * m_volumeFactor, dfunc);
+          }
           // PIV2 distance
           double coord = 0.;
           if (!m_doSort[iBlock] || m_computeDerivatives) {
@@ -1245,9 +1290,9 @@ void PIV2::calculate()
   } // if update_piv
   
   //Timing
-  if (m_timer) stopwatch.stop("4 Build For Derivatives");
+  if (m_timer) stopwatch.stop ("4 Build For Derivatives");
   if (m_timer) {
-    log.printf("Timings for action %s with label %s \n", getName().c_str(), getLabel().c_str() );
+    log.printf ("Timings for action %s with label %s \n", getName().c_str(), getLabel().c_str() );
     log << stopwatch;
   }
 
@@ -1257,11 +1302,11 @@ void PIV2::calculate()
   }
   setBoxDerivatives(m_virial);
   for (unsigned iRef = 0; iRef < m_numberReferences; iRef++) {
-    Value* pValDistance = getPntrToComponent("d" + std::to_string(iRef + 1));
-    pValDistance->set(m_distancePIV2[iRef]);
+    Value* pValDistance = getPntrToComponent ("d" + std::to_string(iRef + 1));
+    pValDistance->set (m_distancePIV2[iRef]);
   }
-  Value* pValLambda = getPntrToComponent("lambda");
-  pValLambda->set(m_lambda);
+  Value* pValLambda = getPntrToComponent ("lambda");
+  pValLambda->set (m_lambda);
 } // end of calculate
 
 } // close namespace piv
