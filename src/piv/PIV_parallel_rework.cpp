@@ -34,7 +34,7 @@ namespace PLMD
 namespace piv
 {
 
-//+PLUMEDOC COLVAR PIVg
+//+PLUMEDOC COLVAR PIVbin
 /*
 Calculates the PIV-distance: the squared Cartesian distance between the PIV \cite gallet2013structural,pipolo2017navigating
 associated to the configuration of the system during the dynamics and a reference configuration provided
@@ -53,7 +53,7 @@ Values for SORT, SFACTOR and Neighborlist parameters have to be specified for ea
 The order is the following: AA,BB,CC,AB,AC,BC. If ONLYDIRECT (ONLYCROSS) is used the order is AA,BB,CC (AB,AC,BC).
 The sorting operation within each PIV block is performed using the counting sort algorithm, PRECISION specifies the size of the counting array.
 \plumedfile
-PIVg ...
+PIVbin ...
 LABEL=piv
 REF_FILE1=Ref1.pdb
 REF_FILE2=Ref2.pdb
@@ -90,7 +90,7 @@ and uses PIV-distances to define a Path Collective Variable (\ref FUNCPATHMSD) w
 With the VOLUME keyword one scales the atom-atom distances by the cubic root of the ratio between the specified value and the box volume of the initial step of the trajectory file.
 
 \plumedfile
-PIVg ...
+PIVbin ...
 LABEL=piv
 VOLUME=12.15
 REF_FILE1=Ref1.pdb
@@ -104,7 +104,7 @@ SWITCH2={RATIONAL R_0=0.5 MM=10 NN=5}
 NL_CUTOFF=1.2,1.2
 NL_STRIDE=10,10
 NL_SKIN=0.1,0.1
-... PIVg
+... PIVbin
 
 p1: FUNCPATHMSD ARG=piv.d1,piv.d2 LAMBDA=0.180338
 METAD ARG=p1.s,p1.z SIGMA=0.01,0.2 HEIGHT=0.8 PACE=500   LABEL=res
@@ -118,12 +118,12 @@ When using PIV please cite \cite pipolo2017navigating .
 */
 //+ENDPLUMEDOC
 
-class PIVg : public Colvar
+class PIVbin : public Colvar
 {
 public:
   static void registerKeywords ( Keywords& keys );
-  PIVg (const ActionOptions&);
-  ~PIVg ();
+  PIVbin (const ActionOptions&);
+  ~PIVbin ();
   // active methods:
   virtual void calculate ();
   void checkFieldsAllowed () {}
@@ -156,9 +156,9 @@ private:
   std::vector<std::vector<std::vector<double>>> mRefPIV;
 };
 
-PLUMED_REGISTER_ACTION (PIVg, "PIVg")
+PLUMED_REGISTER_ACTION (PIVbin, "PIVbin")
 
-void PIVg::registerKeywords (Keywords& keys)
+void PIVbin::registerKeywords (Keywords& keys)
 {
   Colvar::registerKeywords (keys);
   keys.add ("numbered", "SWITCH", "The switching functions parameter."
@@ -207,7 +207,7 @@ void PIVg::registerKeywords (Keywords& keys)
 // CONSTRUCTOR
 //---------------------------------------------------------
 
-PIVg::PIVg (const ActionOptions&ao):
+PIVbin::PIVbin (const ActionOptions&ao):
   PLUMED_COLVAR_INIT (ao),
   mPBC (true),
   mSerial (false),
@@ -557,13 +557,13 @@ PIVg::PIVg (const ActionOptions&ao):
         }
         double df = 0.;
         // Transformation and sorting done at the first timestep to solve the r0 definition issue
-        if (pairDist.modulo2() < mCutOff[iBloc] * mCutOff[iBloc]) {
-          if (mComputeDerivatives) {
-            blockRefPIV.push_back (mSwitchFunc[iBloc].calculate (pairDist.modulo() * mVolumeFactor, df) );
-          } else {
-            blockRefPIV.push_back (pairDist.modulo () * mVolumeFactor);
-          }
+        //if (pairDist.modulo2() < mCutOff[iBloc] * mCutOff[iBloc]) {
+        if (mComputeDerivatives) {
+          blockRefPIV.push_back (mSwitchFunc[iBloc].calculate (pairDist.modulo() * mVolumeFactor, df) );
+        } else {
+          blockRefPIV.push_back (pairDist.modulo () * mVolumeFactor);
         }
+        //}
       }
       refPIV.push_back (blockRefPIV);
     }
@@ -614,7 +614,7 @@ PIVg::PIVg (const ActionOptions&ao):
 // DESTRUCTOR
 //---------------------------------------------------------
 
-PIVg::~PIVg ()
+PIVbin::~PIVbin ()
 {
   for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++) {
     delete mBlockAtoms[iBloc];
@@ -626,7 +626,7 @@ PIVg::~PIVg ()
 // CUT-OFF
 //---------------------------------------------------------
 
-void PIVg::setCutOff (bool doCutOff) 
+void PIVbin::setCutOff (bool doCutOff) 
 {
   // just resolves the equation swf(x) = 1 / nPrecision for all switching functions
   for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++){
@@ -667,7 +667,7 @@ void PIVg::setCutOff (bool doCutOff)
 // DISTANCE 
 //---------------------------------------------------------
 
-inline Vector PIVg::distanceAB (Vector A, Vector B)
+inline Vector PIVbin::distanceAB (Vector A, Vector B)
 {
   if (mPBC) {
     return pbcDistance (A, B);
@@ -680,13 +680,17 @@ inline Vector PIVg::distanceAB (Vector A, Vector B)
 // CALCULATE
 //---------------------------------------------------------
 
-void PIVg::calculate()
+void PIVbin::calculate()
 {
   std::vector<std::vector<double>> currentPIV (mBlocks);
+  /*
   std::vector<std::vector<int>> atmI0 (mBlocks);
   std::vector<std::vector<int>> atmI1 (mBlocks);
   std::vector<std::vector<int>> atmPrecI0 (mPrecision);
   std::vector<std::vector<int>> atmPrecI1 (mPrecision);
+  */
+  std::vector<std::vector<std::vector<int>>> atmI0 (mBlocks);
+  std::vector<std::vector<std::vector<int>>> atmI1 (mBlocks);
   unsigned stride = 1;
   unsigned rank = 0;
 
@@ -780,24 +784,14 @@ void PIVg::calculate()
     log << "\n";
   } // building of the reference PIV 
 
+  // Vectors collecting occupancies: orderVec one rank, orderVecAll all ranks
+  std::vector<std::vector<unsigned>> orderVec (mBlocks);
   ///////////////////////////////////////////////////////////////////
   // Do the sorting with a stride defined by updatePIV 
   if (getStep() % mUpdateStride == 0 || mComputeDerivatives || mFirstStep) {
     if (mComputeDerivatives) {
       log << " Step " << getStep() << "  Computing Derivatives NON-SORTED PIV \n";
     }
-
-    /*
-    // set to zero PIVdistance, derivatives and virial when they are calculated
-    for (unsigned j = 0; j < mDerivatives.size(); j++) {
-      for (unsigned k = 0; k < 3; k++) {
-        mDerivatives[j][k] = 0.;
-        if (j < 3) { 
-          mVirial[j][k] = 0.;
-        }
-      }
-    }
-    */
 
     // update neighbor lists when an atom moves out of the Neighbor list skin
     if (mDoNeighbor) {
@@ -844,12 +838,11 @@ void PIVg::calculate()
     Vector pairDist, deriv;
     // Build "neigborlist" PIV blocks
     for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++) {
+      orderVec[iBloc].resize (mPrecision, 0);
       if (mDoSort[iBloc]) {
-        // Vectors collecting occupancies: orderVec one rank, orderVecAll all ranks
-        std::vector<int> orderVec(mPrecision, 0);
         currentPIV[iBloc].resize(0);
-        atmI0[iBloc].resize(0);
-        atmI1[iBloc].resize(0);
+        atmI0[iBloc].resize(mPrecision);
+        atmI1[iBloc].resize(mPrecision);
 
         // Building distances for the PIV vector at time t
         if (mTimer) stopwatch.start("1 Build currentPIV");
@@ -868,16 +861,16 @@ void PIVg::calculate()
             int vecInt = int (mSwitchFunc[iBloc].calculate (pairDist.modulo() * mVolumeFactor, df)
                              * double(mPrecision - 1) + 0.5);
             //Integer transformed distance values as index of the Ordering Vector orderVec
-            orderVec[vecInt] += 1;
+            orderVec[iBloc][vecInt] += 1;
             //Keeps track of atom indices for force and virial calculations
-            atmPrecI0[vecInt].push_back (i0);
-            atmPrecI1[vecInt].push_back (i1);
+            atmI0[iBloc][vecInt].push_back (i0);
+            atmI1[iBloc][vecInt].push_back (i1);
           } else {
             int vecInt = 0;
-            orderVec[vecInt] += 1;
+            orderVec[iBloc][vecInt] += 1;
             //Keeps track of atom indices for force and virial calculations
-            atmPrecI0[vecInt].push_back (i0);
-            atmPrecI1[vecInt].push_back (i1);
+            atmI0[iBloc][vecInt].push_back (i0);
+            atmI1[iBloc][vecInt].push_back (i1);
           }
         }
          
@@ -889,79 +882,21 @@ void PIVg::calculate()
           // of the rank-specific pair vector in the big pair vector.
           std::vector<int> vecDimension(stride, 0);
           std::vector<int> vecPos(stride, 0);
-          // Vectors collecting occupancies: orderVec one rank, orderVecAll all ranks
-          std::vector<int> orderVecAll(stride * mPrecision);
-          // Big vectors containing all Atom indexes for every occupancy 
-          // (atmI0O(Nprec,n) and atmI1O(Nprec,n) matrices in one vector)
-          std::vector<int> atmI0F;
-          std::vector<int> atmI1F;
-          // Vector used to reconstruct arrays
-          std::vector<unsigned> counter(stride, 0);
-          // Zeros might be many, this slows down a lot due to MPI communication
+
           // Avoid passing the zeros (i=1) for atom indices
-          for (unsigned i = 1; i < mPrecision; i++) {
-            // Building long vectors with all atom indexes for occupancies ordered from i=1 to i=Nprec-1
-            atmI0F.insert(atmI0F.end(), atmPrecI0[i].begin(), atmPrecI0[i].end());
-            atmI1F.insert(atmI1F.end(), atmPrecI1[i].begin(), atmPrecI1[i].end());
-            atmPrecI0[i].resize(0);
-            atmPrecI1[i].resize(0);
-          }
-          // Resize partial arrays to fill up for the next PIV block
-          atmPrecI0[0].resize(0);
-          atmPrecI1[0].resize(0);
-          // Avoid passing the zeros (i=1) for atom indices
-          orderVec[0] = 0;
-          orderVec[mPrecision - 1] = 0;
+          // orderVec[iBloc][0] = 0;
+          // orderVec[iBloc][mPrecision - 1] = 0;
 
           // Wait for all ranks before communication of Vectors
           comm.Barrier();
-
-          // pass the array sizes before passing the arrays
-          int dim = atmI0F.size();
-          // vecDimension and vecPos keep track of the dimension and the starting-position 
-          // of the rank-specific pair vector in the big pair vector.
-          comm.Allgather(&dim, 1, &vecDimension[0], 1);
-
-          // TO BE IMPROVED: the following may be done by the rank 0 (now every rank does it)
-          int finalDimension = 0;
-          for (unsigned i = 1; i < stride; i++) {
-            vecPos[i] = vecPos[i-1] + vecDimension[i-1];
-            finalDimension += vecDimension[i];
-          }
-          finalDimension += vecDimension[0];
-
-          // build big vectors for atom pairs on all ranks for all ranks
-          std::vector<int> atmI0FinalAll (finalDimension);
-          std::vector<int> atmI1FinalAll (finalDimension);
           // TO BE IMPROVED: Allgathers may be substituded by gathers by proc 0
           // Moreover vectors are gathered head-to-tail and assembled later-on in a serial step.
           // Gather the full Ordering Vector (occupancies). This is what we need to build the PIV
-          comm.Allgather(&orderVec[0], mPrecision, &orderVecAll[0], mPrecision);
-          // Gather the vectors of atom pairs to keep track of the idexes for the forces
-          comm.Allgatherv(&atmI0F[0], atmI0F.size(), &atmI0FinalAll[0], &vecDimension[0], &vecPos[0]);
-          comm.Allgatherv(&atmI1F[0], atmI1F.size(), &atmI1FinalAll[0], &vecDimension[0], &vecPos[0]);
-
+          // comm.Allgather(&orderVec[0], mPrecision, &orderVecAll[0], mPrecision);
+          comm.Sum (&orderVec[iBloc][0], mPrecision);
           if (mTimer) stopwatch.stop("2 Sort currentPIV");
-          if (mTimer) stopwatch.start("3 Reconstruct currentPIV");
-
-          // Reconstruct the full vectors from collections of Allgathered parts 
-          // This is a tricky serial step, to assemble toghether PIV and 
-          // atom-pair info from head-tail big vectors. Loop before on l and 
-          // then on i would be better but the allgather should be modified
-          for (unsigned i = 1; i < mPrecision; i++) {
-            for (unsigned l = 0; l < stride; l++) {
-              for (unsigned m = 0; m < orderVecAll[i + l * mPrecision]; m++) {
-                currentPIV[iBloc].push_back ( double(i) / double(mPrecision - 1) );
-                atmI0[iBloc].push_back ( atmI0FinalAll[counter[l] + vecPos[l]] );
-                atmI1[iBloc].push_back ( atmI1FinalAll[counter[l] + vecPos[l]] );
-                counter[l] += 1;
-              } // loop on the number of head-to-tail pieces
-            } // loop on the ranks
-          } // loop on the ordering vector excluding zero (i = 1)
-
-          if (mTimer) stopwatch.stop("3 Reconstruct currentPIV");
-
-        } else {
+        } /*
+         else {
           for (unsigned i = 1; i < mPrecision; i++) {
             for (unsigned m = 0; m < orderVec[i]; m++) {
               currentPIV[iBloc].push_back ( double(i) / double(mPrecision - 1) );
@@ -970,13 +905,9 @@ void PIVg::calculate()
             }
           }
         } // if serial or parallel
+        */
       } // if we sort the PIV
     } // for each block
-
-    // compute PIV-PIV distance and derivatives for each reference
-    for (unsigned iRef = 0; iRef < mRefPIV.size(); iRef++) {
-      mDistancePIV[iRef] = 0.;
-    }
   } // if step % stride == 0
 
   Vector distance;
@@ -987,43 +918,31 @@ void PIVg::calculate()
   // it pritnts referencePIV and currentPIV and quits
   if (mTest) {
     unsigned limit = 0;
-    for (unsigned iRef = 0; iRef < mRefPIV.size(); iRef++) {
-      for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++) {
-        if (mDoSort[iBloc]) {
-          limit = currentPIV[iBloc].size();
-        } else {
-          limit = mRefPIV[iRef][iBloc].size();
-        }
-        log.printf ("PIV Block:  %6i %12s %6i \n", iBloc, "      Size:", limit);
-        log.printf ("%6s%6s%12s%12s%36s\n","     i","     j", "    c-PIV   ",
-                   "    r-PIV   ","   i-j distance vector       ");
-        for (unsigned i = 0; i < limit; i++) {
-          unsigned i0 = 0;
-          unsigned i1 = 0;
-          if (mDoSort[iBloc]) {
-            i0 = atmI0[iBloc][i];
-            i1 = atmI1[iBloc][i];
-          } else {
-            i0 = (mBlockAtoms[iBloc]->getClosePairAtomNumber(i).first).index();
-            i1 = (mBlockAtoms[iBloc]->getClosePairAtomNumber(i).second).index();
-          }
+    for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++) {
+      log.printf ("%6s%6s%12s%12s%36s\n","     i","     j", "    c-PIV   ",
+                 "    r-PIV   ","   i-j distance vector       ");
+      std::vector<unsigned> counter (mRefPIV.size(), 0);
+      for (unsigned iPrec = 1; iPrec < mPrecision; iPrec++) {
+        if (atmI0[iBloc][iPrec].size() > 0) {
+          unsigned i0 = atmI0[iBloc][iPrec][0];
+          unsigned i1 = atmI1[iBloc][iPrec][0];
           distance = distanceAB (getPosition (i0), getPosition (i1));
-          dfunc = 0.;
-
-          double cP, rP;
-          if (mDoSort[iBloc]) {
-            cP = currentPIV[iBloc][i];
-            rP = mRefPIV[iRef][iBloc][mRefPIV[iRef][iBloc].size() - currentPIV[iBloc].size() + i];
-          } else {
-            cP = mSwitchFunc[iBloc].calculate(distance.modulo() * mVolumeFactor, dfunc);
-            rP = mRefPIV[iRef][iBloc][i];
+          double cPIV = double (iPrec) / double (mPrecision - 1);
+          for (unsigned i = 0; i < orderVec[iBloc][iPrec]; i++) {
+            log.printf ("%6i%6i%12.6f%12.6f%12.6f%12.6f",
+                        i0, i1, distance[0], distance[1], distance[2], cPIV);
+            for (unsigned iRef = 0; iRef < mRefPIV.size(); iRef++){
+              (counter[iRef])++;
+              double rPIV = mRefPIV[iRef][iBloc][counter[iRef] - 1];
+              log.printf ("%12.6f", rPIV);
+            }
+            log << "\n";
           }
-          log.printf ("%6i%6i%12.6f%12.6f%12.6f%12.6f%12.6f\n",i0,i1,cP,rP,distance[0],distance[1],distance[2]);
         }
       }
-      log.printf ("This was a test, now exit \n");
-      exit();
     }
+    log.printf ("This was a test, now exit \n");
+    exit();
   }
   
   if (mTimer) stopwatch.start("4 Build For Derivatives");
@@ -1045,77 +964,67 @@ void PIVg::calculate()
     double tPIV = 0;
     for (unsigned iRef = 0; iRef < mRefPIV.size(); iRef++) {
       mDistancePIV[iRef] = 0.;
-      // Re-compute atomic distances for derivatives and compute PIV-PIV distance
-      for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++) {
-        unsigned limit = 0;
-        if (mDoSort[iBloc]) {
-          limit = currentPIV[iBloc].size();
-        } else {
-          limit = mRefPIV[iRef][iBloc].size();
-        }
-        unsigned procByCore = unsigned (limit / stride + 1);
-        for (unsigned i = rank * procByCore; (i < ((rank + 1) * procByCore)) && (i < limit); i++) {
-          // recompute PIV only once
-          if (iRef == 0) {
-            if (mDoSort[iBloc]) {
-              i0 = atmI0[iBloc][i];
-              i1 = atmI1[iBloc][i];
-            } else {
-              i0 = (mBlockAtoms[iBloc]->getClosePairAtomNumber (i).first).index();
-              i1 = (mBlockAtoms[iBloc]->getClosePairAtomNumber (i).second).index();
-            }
-            distance = distanceAB (getPosition (i0), getPosition (i1));
-            dfunc = 0.;
-            // this is needed for dfunc and dervatives
-            dm = distance.modulo();
-            tPIV = 0.;
-            if (dm < mCutOff[iBloc]) {
-              tPIV = mSwitchFunc[iBloc].calculate (dm * mVolumeFactor, dfunc);
-            }
-          }
+    }
+    // Re-compute atomic distances for derivatives and compute PIV-PIV distance
+    for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++) {
+      std::vector<unsigned> counter (mRefPIV.size(), 0);
 
+      for (unsigned iPrec = 1; iPrec < mPrecision; iPrec++) {
+        if (atmI0[iBloc][iPrec].size() > 0) {
+          i0 = atmI0[iBloc][iPrec][0];
+          i1 = atmI1[iBloc][iPrec][0];
+          distance = distanceAB (getPosition (i0), getPosition (i1));
+          // this is needed for dfunc and dervatives
+          tPIV = 0.;
+          dfunc = 0.;
+          dm = distance.modulo();
+          if (dm < mCutOff[iBloc]) {
+            mSwitchFunc[iBloc].calculate (dm * mVolumeFactor, dfunc);
+          }
           // PIV distance
-          double coord = 0.;
-          if (!mDoSort[iBloc] || mComputeDerivatives) {
-            coord = tPIV - mRefPIV[iRef][iBloc][i];
-          } else {
-            coord = currentPIV[iBloc][i] 
-                    - mRefPIV[iRef][iBloc][mRefPIV[iRef][iBloc].size() 
-                    - currentPIV[iBloc].size() + i];
+          tPIV = double (iPrec) / double (mPrecision - 1);
+          for (unsigned iRef = 0; i < mRefPIV.size(); iRef++) {
+            for (unsigned i = 0; i < orderVec[iBloc][iPrec]; i++) {
+              coord[iRef].push_back (tPIV - mRefPIV[iRef][iBloc][counter]);
+              (counter[iRef])++;
+            }
           }
-          // Calculate derivatives, virial, and variable = sum_j (scaling[j] *(currentPIV-rPIV)_j^2)
-          // WARNING: dfunc=dswf/(mVolumeFactor * dm)  (this may change in future Plumed versions)
-          double tmp = 2. * mBlockFactor[iBloc] * coord
-                       * mVolumeFactor*mVolumeFactor * dfunc;
-          Vector tempDeriv = tmp * distance;
-          // 0.5 * (x_i - x_k) * f_ik         (force on atom k due to atom i)
-          mDerivatives[i0] -= tempDeriv;
-          mDerivatives[i1] += tempDeriv;
-          mVirial -= tmp * Tensor (distance, distance);         
-          if (mScaleVolume) {
-            mVirial += 1./3. * tmp * dm*dm * Tensor::identity();
+          for (unsigned i = 0; i < atmI0[iBloc][iPrec].size(); i++) {
+            for (unsigned iRef = 0; iRef < mRefPIV.size(); iRef++){
+              double tmp = 2. * mBlockFactor[iBloc] * coord[iRef][i]
+                           * mVolumeFactor*mVolumeFactor * dfunc;
+              Vector tempDeriv = tmp * distance;
+              // 0.5 * (x_i - x_k) * f_ik         (force on atom k due to atom i)
+              unsigned index0 = atmI0[iBloc][iPrec][i];
+              unsigned index1 = atmI1[iBloc][iPrec][i];
+              mDerivatives[index0] -= tempDeriv;
+              mDerivatives[index1] += tempDeriv;
+              mVirial -= tmp * Tensor (distance, distance);         
+              if (mScaleVolume) {
+                mVirial += 1./3. * tmp * dm*dm * Tensor::identity();
+              }
+              mDistancePIV[iRef] += mBlockFactor[iBloc] * coord[iRef][i]*coord[iRef][i];
+            }
           }
-          mDistancePIV[iRef] += mBlockFactor[iBloc] * coord*coord;
-        } // loop on atoms-atoms pairs
-      } // loop on block
+        } // if bin is not empty 
+      } // loop on histogram
+    } // loop on block
 
-      if (!mSerial) {
-        comm.Barrier();
+    if (!mSerial) {
+      comm.Barrier();
+      for (unsigned iRef = 0; iRef < mRefPIV.size(); iRef++) {
         comm.Sum(&mDistancePIV[iRef], 1);
-        if (!mDerivatives.empty()) {
-          comm.Sum (&mDerivatives[0][0], 3 * mDerivatives.size());
-        }
-        comm.Sum (&mVirial[0][0], 9);
       }
-    } // loop on the number of references
+      if (!mDerivatives.empty()) {
+        comm.Sum (&mDerivatives[0][0], 3 * mDerivatives.size());
+      }
+      comm.Sum (&mVirial[0][0], 9);
+    }
   } // if update_piv
   
   //Timing
   if (mTimer) stopwatch.stop ("4 Build For Derivatives");
-  if (mTimer) {
-    log.printf ("Timings for action %s with label %s \n", getName().c_str(), getLabel().c_str() );
-    log << stopwatch;
-  }
+  if (mTimer) stopwatch.start ("5 Update Derivatives");
 
   // Update derivatives, virial
   setBoxDerivatives(mVirial);
@@ -1129,6 +1038,12 @@ void PIVg::calculate()
   }
 
   mFirstStep = false;
+  
+  if (mTimer) stopwatch.stop ("5 Update Derivatives");
+  if (mTimer) {
+    log.printf ("Timings for action %s with label %s \n", getName().c_str(), getLabel().c_str() );
+    log << stopwatch;
+  }
 } // end of calculate
 } // close namespace piv
 } // close namespace PLMD

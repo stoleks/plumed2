@@ -34,7 +34,7 @@ namespace PLMD
 namespace piv
 {
 
-//+PLUMEDOC COLVAR PIVg
+//+PLUMEDOC COLVAR PIVcom
 /*
 Calculates the PIV-distance: the squared Cartesian distance between the PIV \cite gallet2013structural,pipolo2017navigating
 associated to the configuration of the system during the dynamics and a reference configuration provided
@@ -53,7 +53,7 @@ Values for SORT, SFACTOR and Neighborlist parameters have to be specified for ea
 The order is the following: AA,BB,CC,AB,AC,BC. If ONLYDIRECT (ONLYCROSS) is used the order is AA,BB,CC (AB,AC,BC).
 The sorting operation within each PIV block is performed using the counting sort algorithm, PRECISION specifies the size of the counting array.
 \plumedfile
-PIVg ...
+PIVcom ...
 LABEL=piv
 REF_FILE1=Ref1.pdb
 REF_FILE2=Ref2.pdb
@@ -70,7 +70,7 @@ SWITCH6={RATIONAL R_0=0.5 MM=12 NN=6}
 NL_CUTOFF=0.8,0.6,0.6,0.7,0.7,0.7
 NL_STRIDE=10,10,10,10,10,10
 NL_SKIN=0.1,0.1,0.1,0.1,0.1,0.1
-... PIV
+... PIVcom
 
 PRINT ARG=piv.d1,piv.d2,piv.d3 FILE=colvar
 \endplumedfile
@@ -90,7 +90,7 @@ and uses PIV-distances to define a Path Collective Variable (\ref FUNCPATHMSD) w
 With the VOLUME keyword one scales the atom-atom distances by the cubic root of the ratio between the specified value and the box volume of the initial step of the trajectory file.
 
 \plumedfile
-PIVg ...
+PIVcom ...
 LABEL=piv
 VOLUME=12.15
 REF_FILE1=Ref1.pdb
@@ -104,7 +104,7 @@ SWITCH2={RATIONAL R_0=0.5 MM=10 NN=5}
 NL_CUTOFF=1.2,1.2
 NL_STRIDE=10,10
 NL_SKIN=0.1,0.1
-... PIVg
+... PIVcom
 
 p1: FUNCPATHMSD ARG=piv.d1,piv.d2 LAMBDA=0.180338
 METAD ARG=p1.s,p1.z SIGMA=0.01,0.2 HEIGHT=0.8 PACE=500   LABEL=res
@@ -118,12 +118,12 @@ When using PIV please cite \cite pipolo2017navigating .
 */
 //+ENDPLUMEDOC
 
-class PIVg : public Colvar
+class PIVcom : public Colvar
 {
 public:
   static void registerKeywords ( Keywords& keys );
-  PIVg (const ActionOptions&);
-  ~PIVg ();
+  PIVcom (const ActionOptions&);
+  ~PIVcom ();
   // active methods:
   virtual void calculate ();
   void checkFieldsAllowed () {}
@@ -134,7 +134,7 @@ private:
   ForwardDecl<Stopwatch> stopwatch_fwd;
   /// The stopwatch that times the different parts of the calculation
   Stopwatch& stopwatch = *stopwatch_fwd;
-  bool mPBC, mSerial, mTimer, mFirstStep; 
+  bool mPBC, mSerial, mTimer, mIsRefInit, mIsBlockAtomInit; 
   bool mScaleVolume, mCross, mDirect, mDoNeighbor;
   bool mTest, mComputeDerivatives, mDoCom;
   unsigned mPrecision, mAtomTypes, mBlocks; //, mBlockAtomsSize, 
@@ -145,20 +145,23 @@ private:
   std::vector<bool> mDoSort;
   std::vector<double> mBlockFactor, m_r00;
   std::vector<double> mBlockAtomsSkin;
+  std::vector<double> mMassFactor;
   std::vector<double> mCutOff;
   std::vector<double> mDistancePIV;
+  std::vector<Vector> mPosCOM;
   std::vector<Vector> mDerivatives;
   std::vector<std::string> mSwitchData;
   std::vector<NeighborList*> mBlockAtoms;
+  std::vector<NeighborList*> mBlockAtomCOM;
   std::vector<SwitchingFunction> mSwitchFunc;
   std::vector<std::vector<Vector>> mPrevPosition;
   // first vector for reference, second for block, third for atoms
   std::vector<std::vector<std::vector<double>>> mRefPIV;
 };
 
-PLUMED_REGISTER_ACTION (PIVg, "PIVg")
+PLUMED_REGISTER_ACTION (PIVcom, "PIVcom")
 
-void PIVg::registerKeywords (Keywords& keys)
+void PIVcom::registerKeywords (Keywords& keys)
 {
   Colvar::registerKeywords (keys);
   keys.add ("numbered", "SWITCH", "The switching functions parameter."
@@ -178,6 +181,7 @@ void PIVg::registerKeywords (Keywords& keys)
   keys.add ("optional", "NL_STRIDE", "Update neighbour lists every NL_STRIDE steps.");
   keys.add ("optional", "NL_SKIN", "The maximum atom displacement tolerated for the neighbor lists update.");
   keys.addFlag ("TEST", false, "Print the actual and reference PIV and exit");
+  keys.addFlag ("COM", false, "Use centers of mass of groups of atoms instead of atoms as secified in the Pdb file");
   keys.addFlag ("ONLYCROSS", false, "Use only cross-terms (A-B, A-C, B-C, ...) in PIV");
   keys.addFlag ("ONLYDIRECT", false, "Use only direct-terms (A-A, B-B, C-C, ...) in PIV");
   keys.addFlag ("DERIVATIVES", false, "Activate the calculation of the PIV for every class"
@@ -207,12 +211,13 @@ void PIVg::registerKeywords (Keywords& keys)
 // CONSTRUCTOR
 //---------------------------------------------------------
 
-PIVg::PIVg (const ActionOptions&ao):
+PIVcom::PIVcom (const ActionOptions&ao):
   PLUMED_COLVAR_INIT (ao),
   mPBC (true),
   mSerial (false),
   mTimer (false),
-  mFirstStep (true),
+  mIsRefInit (false),
+  mIsBlockAtomInit (false),
   mScaleVolume (false),
   mCross (true),
   mDirect (true),
@@ -226,7 +231,8 @@ PIVg::PIVg (const ActionOptions&ao):
   mVolumeFactor (1.),
   mVolume0 (1.),
   mLambda (1.),
-  mBlockAtoms (std::vector<NeighborList*> (1))
+  mBlockAtoms (std::vector<NeighborList*> (1)),
+  mBlockAtomCOM (std::vector<NeighborList*> (1))
 {
   log << "Starting PIV Constructor\n";
   bool onlyCross = false, onlyDirect = false, noPbc = !mPBC, noNeighbor = !mDoNeighbor, noCut = false;
@@ -242,6 +248,7 @@ PIVg::PIVg (const ActionOptions&ao):
   parseFlag ("NO_CUTOFF", noCut);
   parseFlag ("ONLYCROSS", onlyCross);
   parseFlag ("ONLYDIRECT", onlyDirect);
+  parseFlag ("COM", mDoCom);
   parseFlag ("DERIVATIVES", mComputeDerivatives);
 
   // parse the atom names 
@@ -282,6 +289,10 @@ PIVg::PIVg (const ActionOptions&ao):
     log << "Timing analysis\n";
     stopwatch.start();
     stopwatch.pause();
+  }
+  // Center of Mass
+  if (mDoCom){
+    log << "Building PIV using COMs\n";
   }
   // Volume Scaling
   if (mVolume0 > 0) {
@@ -412,8 +423,9 @@ PIVg::PIVg (const ActionOptions&ao):
       error("Error in reference PDB file " + referenceFile);
     }
  
-    // Build Atom lists of AtomNumbers (this might be done in PBC.cpp)
+    // Build COM/Atom lists of AtomNumbers (this might be done in PBC.cpp)
     std::vector<std::vector<AtomNumber>> pairList(mAtomTypes);
+    std::vector<std::vector<AtomNumber>> comAtoms(1);
     // number of atoms in the PDB cell
     unsigned neighborListSize = myPDB.getAtomNumbers().size();
     log << "Atoms numbers " << myPDB.getAtomNumbers().size() << "\n";
@@ -429,40 +441,68 @@ PIVg::PIVg (const ActionOptions&ao):
     }
     unsigned nResidues = residueIndex.size();
  
-    // indexList is the index of atoms used in neighborlists 
-    unsigned indexListSize = neighborListSize;
+    // indexList is the index of atom/COM used in neighborlists (for COM indexList
+    // is the index of the first atom in the pdb belonging to that COM)
+    unsigned indexListSize;
+    if (mDoCom) {
+      indexListSize = nResidues;
+    } else {
+      indexListSize = neighborListSize; 
+    }
     std::vector<unsigned> indexList(indexListSize);
-    log << "Total Atoms: " << mAtomTypes * nResidues << " \n";
 
-    // Build lists of Atoms for neighbor lists
+    // If COM resize important arrays
+    comAtoms.resize(neighborListSize);
+    if (mDoCom) {
+      mBlockAtomCOM.resize(neighborListSize);
+      mPosCOM.resize(neighborListSize);
+      mMassFactor.resize(neighborListSize, 0.);
+    }
+    log << "Total COM/Atoms: " << mAtomTypes * nResidues << " \n";
+
+    // Build lists of Atoms/COMs for neighbor lists
+    // comAtoms filled also for non_COM calculation for analysis purposes
     for (unsigned iType = 0; iType < mAtomTypes; iType++) {
-      //unsigned outputID = 0;
+      unsigned outputID = 0;
       std::fill (indexList.begin(), indexList.end(), 0);
       // This builds lists for neighbor lists
       for (auto& atom : myPDB.getAtomNumbers()) {
         std::string atomName;
         unsigned pointIndex = 0;
-        atomName = myPDB.getAtomName(atom);
-        pointIndex = atom.index();
+        if (mDoCom) {
+          atomName = myPDB.getAtomName(atom);
+          auto iRes = std::find (residueIndex.begin(), residueIndex.end(), myPDB.getResidueNumber(atom));
+          if (iRes != residueIndex.end()) {
+            pointIndex = iRes - residueIndex.begin();
+          }
+        } else {
+          atomName = myPDB.getAtomName(atom);
+          pointIndex = atom.index();
+        }
         if (atomName == atomTypes[iType]) {
           if (indexList[pointIndex] == 0) {
-            // adding the atomnumber to the atom list for pairs
+            // adding the atomnumber to the atom/COM list for pairs
             pairList[iType].push_back (atom);
             indexList[pointIndex] = atom.index() + 1;
-            //outputID = pointIndex;
+            outputID = pointIndex;
           }
+          // adding the atomnumber to list of atoms for every COM/Atoms
+          comAtoms[indexList[pointIndex] - 1].push_back (atom);
         }
       }
       // Output Lists
-      /*
       log << "  Groups of type  " << iType << ": " << pairList[iType].size() << " \n";
       std::string groupName;
       unsigned groupSize;
-      groupName = myPDB.getAtomName(comAtoms[indexList[outputID] - 1][0]);
-      groupSize = 1;
+      if (mDoCom) {
+        groupName = myPDB.getResidueName(comAtoms[indexList[outputID] - 1][0]);
+        groupSize = comAtoms[indexList[outputID] - 1].size();
+      } else {
+        groupName = myPDB.getAtomName(comAtoms[indexList[outputID] - 1][0]);
+        groupSize = 1;
+      }
       log.printf ("    %6s %3s %13s %10i %6s\n", "type  ", groupName.c_str(),
                  "   containing ", groupSize," atoms");
-      */
     }
  
     // This is to build the list with all the atoms
@@ -482,6 +522,13 @@ PIVg::PIVg (const ActionOptions&ao):
       // WARNING: is neighborListCut meaningful here?
       mBlockAtomsAll= new NeighborList(listAllAtom, mPBC, getPbc(),
                              neighborListCut[0], neighborListStride[0]);
+      if (mDoCom) {
+        for (unsigned i = 0; i < mPosCOM.size(); i++) {
+          // WARNING: is neighborListCut meaningful here?
+          mBlockAtomCOM[i] = new NeighborList(comAtoms[i], mPBC, getPbc(),
+                                     neighborListCut[0], neighborListStride[0]);
+        }
+      }
       unsigned ncnt = 0;
       // Direct blocks AA, BB, CC, ...
       if (mDirect) {
@@ -519,6 +566,23 @@ PIVg::PIVg (const ActionOptions&ao):
     for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++) {
       log << "  list " << iBloc + 1 << "   size " << mBlockAtoms[iBloc]->size() << " \n";
     }
+    // Calculate COM masses once and for all from lists
+    if (mDoCom) {
+      //log << "Computing Center Of Mass masses  \n";
+      for (unsigned iCOM = 0; iCOM < mPosCOM.size(); iCOM++) {
+        double massCOM = 0.;
+        for (auto& atom : mBlockAtomCOM[iCOM]->getFullAtomList()) {
+          massCOM += myPDB.getOccupancy()[atom.index()];
+        }
+        for (auto& atom : mBlockAtomCOM[iCOM]->getFullAtomList()) {
+          if (massCOM > 0.) {
+            mMassFactor[atom.index()] = myPDB.getOccupancy()[atom.index()] / massCOM;
+          } else {
+            mMassFactor[atom.index()] = 1.;
+          }
+        }
+      }
+    }
 
     //build box vectors and correct for pbc
     log << "Building the box from PDB data ... \n";
@@ -539,7 +603,18 @@ PIVg::PIVg (const ActionOptions&ao):
     } else {
       log << "Using unscaled atom distances \n";
     }
-    
+
+    // build COMs from positions if requested
+    if (mDoCom) {
+      for (unsigned iCOM = 0; iCOM < mPosCOM.size(); iCOM++) {
+        mPosCOM[iCOM][0] = 0.;
+        mPosCOM[iCOM][1] = 0.;
+        mPosCOM[iCOM][2] = 0.; 
+        for (auto& atom : mBlockAtomCOM[iCOM]->getFullAtomList()) {
+          mPosCOM[iCOM] += mMassFactor[atom.index()] * myPDB.getPositions()[atom.index()];
+        }
+      }
+    }
     // build the rPIV distances (transformation and sorting is done afterwards)
     std::vector<std::vector<double>> refPIV;
     for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++) {
@@ -547,13 +622,21 @@ PIVg::PIVg (const ActionOptions&ao):
       for (unsigned iNl = 0; iNl < mBlockAtoms[iBloc]->size(); iNl++) {
         unsigned i0 = (mBlockAtoms[iBloc]->getClosePairAtomNumber(iNl).first).index();
         unsigned i1 = (mBlockAtoms[iBloc]->getClosePairAtomNumber(iNl).second).index();
-
-        auto& positions = myPDB.getPositions();
+        //calculate/get COM position of centers i0 and i1
+        Vector position0, position1;
+        if (mDoCom) {
+          //if (mPBC) makeWhole();
+          position0 = mPosCOM[i0];
+          position1 = mPosCOM[i1];
+        } else {
+          position0 = myPDB.getPositions()[i0];
+          position1 = myPDB.getPositions()[i1];
+        }
         Vector pairDist;
         if (mPBC) {
-          pairDist = myPbc.distance (positions[i0], positions[i1]);
+          pairDist = myPbc.distance(position0, position1);
         } else {
-          pairDist = delta (positions[i0], positions[i1]);
+          pairDist = delta(position0, position1);
         }
         double df = 0.;
         // Transformation and sorting done at the first timestep to solve the r0 definition issue
@@ -614,10 +697,15 @@ PIVg::PIVg (const ActionOptions&ao):
 // DESTRUCTOR
 //---------------------------------------------------------
 
-PIVg::~PIVg ()
+PIVcom::~PIVcom ()
 {
   for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++) {
     delete mBlockAtoms[iBloc];
+  }
+  if (mDoCom) {
+    for (unsigned i = 0; i < mBlockAtomCOM.size(); i++) {
+      delete mBlockAtomCOM[i];
+    }
   }
   delete mBlockAtomsAll;
 }
@@ -626,7 +714,7 @@ PIVg::~PIVg ()
 // CUT-OFF
 //---------------------------------------------------------
 
-void PIVg::setCutOff (bool doCutOff) 
+void PIVcom::setCutOff (bool doCutOff) 
 {
   // just resolves the equation swf(x) = 1 / nPrecision for all switching functions
   for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++){
@@ -667,7 +755,7 @@ void PIVg::setCutOff (bool doCutOff)
 // DISTANCE 
 //---------------------------------------------------------
 
-inline Vector PIVg::distanceAB (Vector A, Vector B)
+inline Vector PIVcom::distanceAB (Vector A, Vector B)
 {
   if (mPBC) {
     return pbcDistance (A, B);
@@ -680,7 +768,7 @@ inline Vector PIVg::distanceAB (Vector A, Vector B)
 // CALCULATE
 //---------------------------------------------------------
 
-void PIVg::calculate()
+void PIVcom::calculate()
 {
   std::vector<std::vector<double>> currentPIV (mBlocks);
   std::vector<std::vector<int>> atmI0 (mBlocks);
@@ -695,14 +783,16 @@ void PIVg::calculate()
     rank = comm.Get_rank();
   }
 
-  // Compute volume scaling factor
+  // Calculate volume scaling factor
   if (mScaleVolume) {
     mVolumeFactor = cbrt (mVolume0 / getBox().determinant());
   }
 
   ///////////////////////////////////////////////////////////////////
   // Transform (and sort) the rPIV before starting the dynamics
-  if (mFirstStep && !mComputeDerivatives) {
+  if (!mIsRefInit && !mComputeDerivatives) {
+    // Calculate the volume scaling factor
+    
     // Set switching function parameters
     log << "Switching Function Parameters \n";
     mSwitchFunc.resize(mBlocks);
@@ -777,17 +867,18 @@ void PIVg::calculate()
     log << "lambda=" << lambda << " d_1n=" << distance << "\n";
     Value* pValLambda = getPntrToComponent ("lambda");
     pValLambda->set (lambda);
+
+    mIsRefInit = true;
     log << "\n";
   } // building of the reference PIV 
 
   ///////////////////////////////////////////////////////////////////
   // Do the sorting with a stride defined by updatePIV 
-  if (getStep() % mUpdateStride == 0 || mComputeDerivatives || mFirstStep) {
+  if (getStep() % mUpdateStride == 0 || mComputeDerivatives || !mIsBlockAtomInit) {
     if (mComputeDerivatives) {
       log << " Step " << getStep() << "  Computing Derivatives NON-SORTED PIV \n";
     }
 
-    /*
     // set to zero PIVdistance, derivatives and virial when they are calculated
     for (unsigned j = 0; j < mDerivatives.size(); j++) {
       for (unsigned k = 0; k < 3; k++) {
@@ -797,19 +888,38 @@ void PIVg::calculate()
         }
       }
     }
-    */
+
+    // build COMs from positions if requested
+    if (mDoCom) {
+      if (mPBC) {
+        makeWhole();
+      }
+      for (unsigned iCOM = 0; iCOM < mPosCOM.size(); iCOM++) {
+        mPosCOM[iCOM][0] = 0.;
+        mPosCOM[iCOM][1] = 0.;
+        mPosCOM[iCOM][2] = 0.;
+        for (auto& atom : mBlockAtomCOM[iCOM]->getFullAtomList()) {
+          mPosCOM[iCOM] += mMassFactor[atom.index()] * getPosition (atom.index());
+        }
+      }
+    }
 
     // update neighbor lists when an atom moves out of the Neighbor list skin
     if (mDoNeighbor) {
       // for first step list = actual position
-      if (mFirstStep) {
+      if (!mIsBlockAtomInit) {
         for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++) {
           for (unsigned iAtm = 0; iAtm < mBlockAtoms[iBloc]->getFullAtomList().size(); iAtm++) {
-            mPrevPosition[iBloc].push_back ( 
-              getPosition (mBlockAtoms[iBloc]->getFullAtomList ()[iAtm].index())); 
+            Vector position;
+            if (mDoCom) {
+              position = mPosCOM[iAtm];
+            } else {
+              position = getPosition(mBlockAtoms[iBloc]->getFullAtomList()[iAtm].index());
+            }
+            mPrevPosition[iBloc].push_back (position);
           }
-          mBlockAtoms[iBloc]->update (mPrevPosition[iBloc]);
         }
+        mIsBlockAtomInit = true;
       }
 
       // Decide whether to update lists based on atom displacement, every stride
@@ -818,7 +928,12 @@ void PIVg::calculate()
         std::vector< std::vector<Vector>> updatedPos (mBlocks);
         for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++) {
           for (unsigned iAtm = 0; iAtm < mBlockAtoms[iBloc]->getFullAtomList().size(); iAtm++) {
-            auto position = getPosition(mBlockAtoms[iBloc]->getFullAtomList()[iAtm].index());
+            Vector position;
+            if (mDoCom) {
+              position = mPosCOM[iAtm];
+            } else {
+              position = getPosition(mBlockAtoms[iBloc]->getFullAtomList()[iAtm].index());
+            }
             if (pbcDistance(position, mPrevPosition[iBloc][iAtm]).modulo2()
                 >= mBlockAtomsSkin[iBloc] * mBlockAtomsSkin[iBloc]) {
               doUpdate = true;
@@ -829,7 +944,7 @@ void PIVg::calculate()
           // update positions if needed
           if (doUpdate == true) {
             mPrevPosition = updatedPos;
-            mBlockAtoms[iBloc]->update (mPrevPosition[iBloc]);
+            mBlockAtoms[iBloc]->update(mPrevPosition[iBloc]);
             if (getStep() % 50000 == 0) {
               if (iBloc == 0) 
                 log << "  Step " << getStep() << " neighbour lists updated for block ";
@@ -860,12 +975,19 @@ void PIVg::calculate()
         for (unsigned iAtm = rank; iAtm < mBlockAtoms[iBloc]->size(); iAtm += stride) {*/
           unsigned i0 = (mBlockAtoms[iBloc]->getClosePairAtomNumber(iAtm).first).index();
           unsigned i1 = (mBlockAtoms[iBloc]->getClosePairAtomNumber(iAtm).second).index();
-          pairDist = distanceAB (getPosition (i0), getPosition (i1));
-
+          Vector position0, position1;
+          if (mDoCom) {
+            position0 = mPosCOM[i0];
+            position1 = mPosCOM[i1];
+          } else {
+            position0 = getPosition (i0);
+            position1 = getPosition (i1);
+          }
+          pairDist = distanceAB (position0, position1);
           double df = 0.;
           //Transforming distances with the Switching function + real to integer transformation
           if (pairDist.modulo2() < mCutOff[iBloc] * mCutOff[iBloc]) {
-            int vecInt = int (mSwitchFunc[iBloc].calculate (pairDist.modulo() * mVolumeFactor, df)
+            int vecInt = int (mSwitchFunc[iBloc].calculate(pairDist.modulo() * mVolumeFactor, df)
                              * double(mPrecision - 1) + 0.5);
             //Integer transformed distance values as index of the Ordering Vector orderVec
             orderVec[vecInt] += 1;
@@ -983,8 +1105,7 @@ void PIVg::calculate()
   double dfunc = 0.;
 
   ///////////////////////////////////////////////////////////////////
-  // This test may be run by specifying the TEST keyword as input, 
-  // it pritnts referencePIV and currentPIV and quits
+  // This test may be run by specifying the TEST keyword as input, it pritnts referencePIV and currentPIV and quits
   if (mTest) {
     unsigned limit = 0;
     for (unsigned iRef = 0; iRef < mRefPIV.size(); iRef++) {
@@ -1007,9 +1128,16 @@ void PIVg::calculate()
             i0 = (mBlockAtoms[iBloc]->getClosePairAtomNumber(i).first).index();
             i1 = (mBlockAtoms[iBloc]->getClosePairAtomNumber(i).second).index();
           }
-          distance = distanceAB (getPosition (i0), getPosition (i1));
+          Vector position0,position1;
+          if (mDoCom) {
+            position0 = mPosCOM[i0];
+            position1 = mPosCOM[i1];
+          } else {
+            position0 = getPosition(i0);
+            position1 = getPosition(i1);
+          }
+          distance = distanceAB (position0, position1);
           dfunc = 0.;
-
           double cP, rP;
           if (mDoSort[iBloc]) {
             cP = currentPIV[iBloc][i];
@@ -1029,8 +1157,8 @@ void PIVg::calculate()
   if (mTimer) stopwatch.start("4 Build For Derivatives");
 
   ///////////////////////////////////////////////////////////////////
-  // compute derivatives with a given stride
-  if (getStep() % mUpdateStride == 0 || mFirstStep) {
+  // compute derivatives 
+  if (getStep() % mUpdateStride == 0) {
     // set to zero PIVdistance, derivatives and virial when they are calculated
     for (unsigned j = 0; j < mDerivatives.size(); j++) {
       for (unsigned k = 0; k < 3; k++) {
@@ -1061,16 +1189,24 @@ void PIVg::calculate()
               i0 = atmI0[iBloc][i];
               i1 = atmI1[iBloc][i];
             } else {
-              i0 = (mBlockAtoms[iBloc]->getClosePairAtomNumber (i).first).index();
-              i1 = (mBlockAtoms[iBloc]->getClosePairAtomNumber (i).second).index();
+              i0 = (mBlockAtoms[iBloc]->getClosePairAtomNumber(i).first).index();
+              i1 = (mBlockAtoms[iBloc]->getClosePairAtomNumber(i).second).index();
             }
-            distance = distanceAB (getPosition (i0), getPosition (i1));
+            Vector position0, position1;
+            if (mDoCom) {
+              position0 = mPosCOM[i0];
+              position1 = mPosCOM[i1];
+            } else {
+              position0 = getPosition(i0);
+              position1 = getPosition(i1);
+            }
+            distance = distanceAB (position0, position1);
             dfunc = 0.;
             // this is needed for dfunc and dervatives
             dm = distance.modulo();
             tPIV = 0.;
             if (dm < mCutOff[iBloc]) {
-              tPIV = mSwitchFunc[iBloc].calculate (dm * mVolumeFactor, dfunc);
+              tPIV = mSwitchFunc[iBloc].calculate(dm * mVolumeFactor, dfunc);
             }
           }
 
@@ -1089,9 +1225,43 @@ void PIVg::calculate()
                        * mVolumeFactor*mVolumeFactor * dfunc;
           Vector tempDeriv = tmp * distance;
           // 0.5 * (x_i - x_k) * f_ik         (force on atom k due to atom i)
-          mDerivatives[i0] -= tempDeriv;
-          mDerivatives[i1] += tempDeriv;
-          mVirial -= tmp * Tensor (distance, distance);         
+          if (mDoCom) {
+            Vector dist;
+            for (auto& atom0 : mBlockAtomCOM[i0]->getFullAtomList()) {
+              unsigned x0 = atom0.index();
+              mDerivatives[x0] -= tempDeriv * mMassFactor[x0];
+              for (unsigned l = 0; l < 3; l++) {
+                dist[l] = 0.;
+              }
+              Vector position0 = getPosition(x0);
+              for (auto& atom1 : mBlockAtomCOM[i0]->getFullAtomList()) {
+                dist += distanceAB (position0, getPosition(atom1.index()) );
+              }
+              for (auto& atom1 : mBlockAtomCOM[i1]->getFullAtomList()) {
+                dist += distanceAB (position0, getPosition(atom1.index()) );
+              }
+              mVirial -= 0.25 * mMassFactor[x0] * Tensor (dist, tempDeriv);
+            } // loop on first atom of each pair
+            for (auto& atom1 : mBlockAtomCOM[i1]->getFullAtomList()) {
+              unsigned x1 = atom1.index();
+              mDerivatives[x1] += tempDeriv * mMassFactor[x1];
+              for (unsigned l = 0; l < 3; l++) {
+                dist[l] = 0.;
+              }
+              Vector position1 = getPosition(x1);
+              for (auto& atom0 : mBlockAtomCOM[i1]->getFullAtomList()) {
+                dist += distanceAB (position1, getPosition(atom0.index()) );
+              }
+              for (auto& atom0 : mBlockAtomCOM[i0]->getFullAtomList()) {
+                dist += distanceAB (position1, getPosition(atom0.index()) );
+              }
+              mVirial += 0.25 * mMassFactor[x1] * Tensor (dist, tempDeriv);
+            } // loop on second atom of each pair
+          } else {
+            mDerivatives[i0] -= tempDeriv;
+            mDerivatives[i1] += tempDeriv;
+            mVirial -= tmp * Tensor (distance, distance);
+          } // if do center of mass
           if (mScaleVolume) {
             mVirial += 1./3. * tmp * dm*dm * Tensor::identity();
           }
@@ -1127,8 +1297,6 @@ void PIVg::calculate()
     Value* pValDistance = getPntrToComponent ("d" + std::to_string(iRef + 1));
     pValDistance->set (mDistancePIV[iRef]);
   }
-
-  mFirstStep = false;
 } // end of calculate
 } // close namespace piv
 } // close namespace PLMD

@@ -220,7 +220,7 @@ FuncPathMSD::FuncPathMSD(const ActionOptions&ao):
      && myname != "PIV"
      && myname != "PIVS"
      && myname != "PIVg" 
-     && myname!="PIV2") error("One or more of your arguments is not of RMSD/CONTACTMAP/DISTANCE/PIV type!!!");
+     && myname!="PIVbin") error("One or more of your arguments is not of RMSD/CONTACTMAP/DISTANCE/PIV type!!!");
   for(unsigned i=1; i<getNumberOfArguments(); i++) {
     // for each value get the name and the label of the corresponding action
     if( getPntrToArgument(i)->getPntrToAction()->getName()!=myname ) error("mismatch between the types of arguments");
