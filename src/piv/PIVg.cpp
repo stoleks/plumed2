@@ -129,7 +129,6 @@ public:
   void checkFieldsAllowed () {}
 private:
   Vector distanceAB (Vector A, Vector B);
-  void setCutOff (bool cutOff);
 private:
   ForwardDecl<Stopwatch> stopwatch_fwd;
   /// The stopwatch that times the different parts of the calculation
@@ -145,7 +144,6 @@ private:
   std::vector<bool> mDoSort;
   std::vector<double> mBlockFactor, m_r00;
   std::vector<double> mBlockAtomsSkin;
-  std::vector<double> mCutOff;
   std::vector<double> mDistancePIV;
   std::vector<Vector> mDerivatives;
   std::vector<std::string> mSwitchData;
@@ -185,7 +183,6 @@ void PIVg::registerKeywords (Keywords& keys)
   keys.addFlag ("NO_NLIST", false, "Don't use a neighbour list for distance calculations.");
   keys.addFlag ("SERIAL", false, "Perform the calculation in serial - for debug purpose");
   keys.addFlag ("TIMER", false, "Permorm timing analysis on heavy loops.");
-  keys.addFlag ("NO_CUTOFF", false, "Don't use cut-off to reduce the computational cost of the PIV.");
   keys.reset_style ("SWITCH", "compulsory");
   componentsAreNotOptional (keys);
   // output
@@ -229,7 +226,7 @@ PIVg::PIVg (const ActionOptions&ao):
   mBlockAtoms (std::vector<NeighborList*> (1))
 {
   log << "Starting PIV Constructor\n";
-  bool onlyCross = false, onlyDirect = false, noPbc = !mPBC, noNeighbor = !mDoNeighbor, noCut = false;
+  bool onlyCross = false, onlyDirect = false, noPbc = !mPBC, noNeighbor = !mDoNeighbor;
 
   // parse all the mandatory inputs that are not vector
   parse ("VOLUME", mVolume0);
@@ -239,7 +236,6 @@ PIVg::PIVg (const ActionOptions&ao):
   parseFlag ("TIMER", mTimer);
   parseFlag ("SERIAL", mSerial);
   parseFlag ("NO_NLIST", noNeighbor);
-  parseFlag ("NO_CUTOFF", noCut);
   parseFlag ("ONLYCROSS", onlyCross);
   parseFlag ("ONLYDIRECT", onlyDirect);
   parseFlag ("DERIVATIVES", mComputeDerivatives);
@@ -386,9 +382,6 @@ PIVg::PIVg (const ActionOptions&ao):
       log << "  Swf: " << iBloc + 1 << "  r0=" << (mSwitchFunc[iBloc].description()).c_str() << "\n";
     }
   }
-
-  // set the cut-off
-  setCutOff (!noCut);
 
   // Reference PDB file 
   for (unsigned iRef = 0; ; iRef++) {
@@ -557,12 +550,10 @@ PIVg::PIVg (const ActionOptions&ao):
         }
         double df = 0.;
         // Transformation and sorting done at the first timestep to solve the r0 definition issue
-        if (pairDist.modulo2() < mCutOff[iBloc] * mCutOff[iBloc]) {
-          if (mComputeDerivatives) {
-            blockRefPIV.push_back (mSwitchFunc[iBloc].calculate (pairDist.modulo() * mVolumeFactor, df) );
-          } else {
-            blockRefPIV.push_back (pairDist.modulo () * mVolumeFactor);
-          }
+        if (mComputeDerivatives) {
+          blockRefPIV.push_back (mSwitchFunc[iBloc].calculate (pairDist.modulo() * mVolumeFactor, df) );
+        } else {
+          blockRefPIV.push_back (pairDist.modulo () * mVolumeFactor);
         }
       }
       refPIV.push_back (blockRefPIV);
@@ -620,47 +611,6 @@ PIVg::~PIVg ()
     delete mBlockAtoms[iBloc];
   }
   delete mBlockAtomsAll;
-}
-
-//---------------------------------------------------------
-// CUT-OFF
-//---------------------------------------------------------
-
-void PIVg::setCutOff (bool doCutOff) 
-{
-  // just resolves the equation swf(x) = 1 / nPrecision for all switching functions
-  for (unsigned iBloc = 0; iBloc < mBlocks; iBloc++){
-    SwitchingFunction switchFunc;
-    std::string errors;
-    switchFunc.set(mSwitchData[iBloc], errors);
-    if (errors.length() != 0){
-      error("problem reading switch" + std::to_string(iBloc + 1) + " keyword : " + errors );
-    }
-
-    log << "For block " << iBloc + 1;
-    if (doCutOff) {
-      unsigned maxIteration = 0;
-      double f, g, df;
-      double espilon = 2. / double(mPrecision);
-      
-      double x0 =  switchFunc.get_r0() / 2.;
-      f = switchFunc.calculate(x0, df) - epsilon;
-      while (fabs(f) > (epsilon / 100.) && maxIteration < 10000)
-      {
-        f = switchFunc.calculate(x0, df) - espilon;
-        g = (switchFunc.calculate(x0 + f, df) - epsilon) / f - 1;
-        x0 = x0 - f / g;
-        maxIteration++;
-      }
-      mCutOff.push_back (x0);
-      log << " epsilon=" << espilon << " this correspond to a cut-off=";
-    } else {
-      double dmax = switchFunc.get_dmax();
-      mCutOff.push_back (dmax);
-      log << ", cut-off=";
-    }
-    log << mCutOff[iBloc] << "\n";
-  }
 }
 
 //---------------------------------------------------------
@@ -855,30 +805,24 @@ void PIVg::calculate()
         if (mTimer) stopwatch.start("1 Build currentPIV");
 
         // If we have N cores and Na atoms, we need (Na/N + 1) process by cores
+        /*
         unsigned procByCore = unsigned(mBlockAtoms[iBloc]->size() / stride + 1);
-        for (unsigned iAtm = rank * procByCore; (iAtm < ((rank + 1) * procByCore)) && (iAtm < mBlockAtoms[iBloc]->size()); iAtm++) { /*
-        for (unsigned iAtm = rank; iAtm < mBlockAtoms[iBloc]->size(); iAtm += stride) {*/
+        for (unsigned iAtm = rank * procByCore; (iAtm < ((rank + 1) * procByCore)) && (iAtm < mBlockAtoms[iBloc]->size()); iAtm++) {
+        */
+        for (unsigned iAtm = rank; iAtm < mBlockAtoms[iBloc]->size(); iAtm += stride) {
           unsigned i0 = (mBlockAtoms[iBloc]->getClosePairAtomNumber(iAtm).first).index();
           unsigned i1 = (mBlockAtoms[iBloc]->getClosePairAtomNumber(iAtm).second).index();
           pairDist = distanceAB (getPosition (i0), getPosition (i1));
 
           double df = 0.;
           //Transforming distances with the Switching function + real to integer transformation
-          if (pairDist.modulo2() < mCutOff[iBloc] * mCutOff[iBloc]) {
-            int vecInt = int (mSwitchFunc[iBloc].calculate (pairDist.modulo() * mVolumeFactor, df)
-                             * double(mPrecision - 1) + 0.5);
-            //Integer transformed distance values as index of the Ordering Vector orderVec
-            orderVec[vecInt] += 1;
-            //Keeps track of atom indices for force and virial calculations
-            atmPrecI0[vecInt].push_back (i0);
-            atmPrecI1[vecInt].push_back (i1);
-          } else {
-            int vecInt = 0;
-            orderVec[vecInt] += 1;
-            //Keeps track of atom indices for force and virial calculations
-            atmPrecI0[vecInt].push_back (i0);
-            atmPrecI1[vecInt].push_back (i1);
-          }
+          int vecInt = int (mSwitchFunc[iBloc].calculate (pairDist.modulo() * mVolumeFactor, df)
+                           * double(mPrecision - 1) + 0.5);
+          //Integer transformed distance values as index of the Ordering Vector orderVec
+          orderVec[vecInt] += 1;
+          //Keeps track of atom indices for force and virial calculations
+          atmPrecI0[vecInt].push_back (i0);
+          atmPrecI1[vecInt].push_back (i1);
         }
          
         if (mTimer) stopwatch.stop("1 Build currentPIV");
@@ -1039,10 +983,6 @@ void PIVg::calculate()
       }
     }
     // compute PIV-PIV distance and derivatives for each reference
-    unsigned i0 = 0;
-    unsigned i1 = 0;
-    double dm = 0;
-    double tPIV = 0;
     for (unsigned iRef = 0; iRef < mRefPIV.size(); iRef++) {
       mDistancePIV[iRef] = 0.;
       // Re-compute atomic distances for derivatives and compute PIV-PIV distance
@@ -1053,26 +993,28 @@ void PIVg::calculate()
         } else {
           limit = mRefPIV[iRef][iBloc].size();
         }
+        /*
         unsigned procByCore = unsigned (limit / stride + 1);
         for (unsigned i = rank * procByCore; (i < ((rank + 1) * procByCore)) && (i < limit); i++) {
-          // recompute PIV only once
-          if (iRef == 0) {
-            if (mDoSort[iBloc]) {
-              i0 = atmI0[iBloc][i];
-              i1 = atmI1[iBloc][i];
-            } else {
-              i0 = (mBlockAtoms[iBloc]->getClosePairAtomNumber (i).first).index();
-              i1 = (mBlockAtoms[iBloc]->getClosePairAtomNumber (i).second).index();
-            }
-            distance = distanceAB (getPosition (i0), getPosition (i1));
-            dfunc = 0.;
-            // this is needed for dfunc and dervatives
-            dm = distance.modulo();
-            tPIV = 0.;
-            if (dm < mCutOff[iBloc]) {
-              tPIV = mSwitchFunc[iBloc].calculate (dm * mVolumeFactor, dfunc);
-            }
+        */
+        for (unsigned i = rank; i < limit; i += stride) {
+          unsigned i0 = 0;
+          unsigned i1 = 0;
+          if (mDoSort[iBloc]) {
+            i0 = atmI0[iBloc][i];
+            i1 = atmI1[iBloc][i];
+          } else {
+            i0 = (mBlockAtoms[iBloc]->getClosePairAtomNumber (i).first).index();
+            i1 = (mBlockAtoms[iBloc]->getClosePairAtomNumber (i).second).index();
           }
+          // recompute PIV only once
+          double dm = 0;
+          double tPIV = 0;
+          distance = distanceAB (getPosition (i0), getPosition (i1));
+          dfunc = 0.;
+          // this is needed for dfunc and dervatives
+          dm = distance.modulo();
+          tPIV = mSwitchFunc[iBloc].calculate (dm * mVolumeFactor, dfunc);
 
           // PIV distance
           double coord = 0.;
