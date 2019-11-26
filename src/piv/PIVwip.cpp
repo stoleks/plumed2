@@ -18,7 +18,7 @@ along with plumed.  If not, see <http://www.gnu.org/licenses/>.
 #include "PIVwip.h"
 
 namespace std {
-  // note: this implementation does not disable this overload for array types
+  // note: this implementation does not disable 'this' overload for array types
   template <typename T, typename... Args>
   std::unique_ptr<T> make_unique (Args&&... args)
   {
@@ -246,8 +246,8 @@ void PIVwip::parseOptions (
 }
 
 //---------------------------------------------------------
-// PARSE-OPTIONS
-// parse all mandatory and optional parameters
+// PARSE-REFERENCES
+// parse all pdb files
 //---------------------------------------------------------
 void PIVwip::parseReferences (
   const bool cross,
@@ -262,11 +262,13 @@ void PIVwip::parseReferences (
     // set-up opening of the reference file
     std::string referenceFile; 
     parseNumbered ("REF_FILE", refIndex + 1, referenceFile);
+
+    // if file is empty we stop the procedure
     readAllRef = referenceFile.empty();
     if (readAllRef) break;
-    log << "\n----- Reference " << refIndex + 1 << " -----\n";
 
     // opening of the reference PBD file
+    log << "\n----- Reference " << refIndex + 1 << " -----\n";
     auto myPDB = PDB ();
     auto file = fopen (referenceFile.c_str(), "r");
     if (file != NULL) {
@@ -289,10 +291,9 @@ void PIVwip::parseReferences (
     // Build list of residue index
     auto residueIndex = std::unordered_map <unsigned, unsigned> ();
     for (unsigned i = 0; i < pdbAtoms.size (); i++) {
-      auto residueNumber = myPDB.getResidueNumber (pdbAtoms[i]);
-      if (residueIndex.find (residueNumber)
-          == std::end (residueIndex)) {
-        residueIndex[residueNumber] = residueNumber;
+      auto resNumber = myPDB.getResidueNumber (pdbAtoms[i]);
+      if (residueIndex.find (resNumber) == std::end (residueIndex)) {
+        residueIndex[resNumber] = resNumber;
       }
     }
 
@@ -309,12 +310,15 @@ void PIVwip::parseReferences (
     auto pairList = std::vector <std::vector <AtomNumber>> (mAtomTypes);
     for (unsigned type = 0; type < mAtomTypes; type++) {
       for (const auto& atom : pdbAtoms) {
+        auto atomName = myPDB.getAtomName (atom);
+        /*
         std::string atomName;
         if (mDoCom) {
           atomName = myPDB.getAtomName (atom);
         } else {
           atomName = myPDB.getAtomName (atom);
         }
+        */
         if (atomName == atomTypes [type]) {
           pairList [type].push_back (atom);
           indexList.push_back (atom.index () + 1);
@@ -323,15 +327,15 @@ void PIVwip::parseReferences (
       }
       // Output Lists
       log << "  Groups of type  " << type << ": " << pairList [type].size() << " \n";
-      std::string groupName;
-      unsigned groupSize;
+      auto groupName = myPDB.getResidueName (comAtoms [indexList.back () - 1][0]);
+      auto groupSize = mDoCom ? comAtoms [indexList.back () - 1].size () : 1;
+      /*
       if (mDoCom) {
-        groupName = myPDB.getResidueName (comAtoms [indexList.back () - 1][0]);
         groupSize = comAtoms [indexList.back () - 1].size();
       } else {
-        groupName = myPDB.getAtomName (comAtoms [indexList.back () - 1][0]);
         groupSize = 1;
       }
+      */
       log.printf ("    %6s %3s %13s %10i %6s\n", "type  ", groupName.c_str(),
                   "   containing ", groupSize," atoms");
     }
@@ -349,11 +353,11 @@ void PIVwip::parseReferences (
     if (mDoCom) {
       //log << "Computing Center Of Mass masses  \n";
       for (unsigned i = 0; i < mPosCOM.size(); i++) {
-        double massCOM = 0.;
-        for (auto& atom : mBlockAtomCOM[i]->getFullAtomList()) {
+        auto massCOM = double (0.);
+        for (const auto& atom : mBlockAtomCOM[i]->getFullAtomList()) {
           massCOM += myPDB.getOccupancy()[atom.index()];
         }
-        for (auto& atom : mBlockAtomCOM[i]->getFullAtomList()) {
+        for (const auto& atom : mBlockAtomCOM[i]->getFullAtomList()) {
           if (massCOM > 0.) {
             mMassFactor[atom.index()] = 
               myPDB.getOccupancy()[atom.index()] / massCOM;
@@ -390,19 +394,19 @@ void PIVwip::parseReferences (
         mPosCOM[i][0] = 0.;
         mPosCOM[i][1] = 0.;
         mPosCOM[i][2] = 0.; 
-        for (auto& atom : mBlockAtomCOM[i]->getFullAtomList()) {
-          mPosCOM[i] += mMassFactor[atom.index()] 
-            * myPDB.getPositions()[atom.index()];
+        for (const auto& atom : mBlockAtomCOM[i]->getFullAtomList()) {
+          auto index = atom.index ();
+          mPosCOM[i] += mMassFactor[index] * myPDB.getPositions()[index];
         }
       }
     }
     // build the rPIV distances (transformation and sorting is done afterwards)
-    std::vector <std::vector <double>> refPIV;
+    auto refPIV = std::vector <std::vector <double>> ();
     for (unsigned bloc = 0; bloc < mBlocks; bloc++) {
-      std::vector <double> blockRefPIV;
+      auto blockRefPIV = std::vector <double> ();
       for (unsigned atom = 0; atom < mBlockAtoms[bloc]->size(); atom++) {
-        unsigned i0 = (mBlockAtoms[bloc]->getClosePairAtomNumber (atom).first).index();
-        unsigned i1 = (mBlockAtoms[bloc]->getClosePairAtomNumber (atom).second).index();
+        auto i0 = (mBlockAtoms[bloc]->getClosePairAtomNumber (atom).first).index();
+        auto i1 = (mBlockAtoms[bloc]->getClosePairAtomNumber (atom).second).index();
         //calculate/get COM position of centers i0 and i1
         Vector position0, position1;
         if (mDoCom) {
@@ -547,26 +551,26 @@ void PIVwip::makeNeighborLists (
 //---------------------------------------------------------
 void PIVwip::updateNeighborList () 
 {
-  // for first step list = actual position
+  // for first step neighborlist = actual position
   if (mFirstStep) {
     for (unsigned bloc = 0; bloc < mBlocks; bloc++) {
-      auto atomInBlock = mBlockAtoms[bloc]->getFullAtomList ();
-      for (unsigned atm = 0; atm < atomInBlock.size(); atm++) {
+      const auto& atomsOfBlock = mBlockAtoms[bloc]->getFullAtomList ();
+      for (unsigned atm = 0; atm < atomsOfBlock.size(); atm++) {
         Vector position;
         if (mDoCom) {
           position = mPosCOM[atm];
         } else {
-          position = getPosition (atomInBlock[atm].index());
+          position = getPosition (atomsOfBlock[atm].index());
         }
         mPrevPosition[bloc].push_back (position);
       }
+      mBlockAtoms[bloc]->update (mPrevPosition[bloc]);
     }
-    mFirstStep = false;
   }
   // Decide whether to update lists based on atom displacement, every stride
   if (getStep() % mBlockAtomsAll->getStride() == 0) {
-    bool doUpdate = false;
-    std::vector< std::vector<Vector>> updatedPos (mBlocks);
+    bool doUpdate = mFirstStep;
+    auto updatedPos = std::vector< std::vector<Vector>> (mBlocks);
     for (unsigned bloc = 0; bloc < mBlocks; bloc++) {
       const auto& atomsOfBlock = mBlockAtoms[bloc]->getFullAtomList ();
       for (unsigned atm = 0; atm < atomsOfBlock.size(); atm++) {
@@ -576,18 +580,19 @@ void PIVwip::updateNeighborList ()
         } else {
           position = getPosition(atomsOfBlock[atm].index());
         }
-        doUpdate =
-          pbcDistance (position, mPrevPosition[bloc][atm]).modulo2() 
-          >= mAtomsSkin * mAtomsSkin;
+        doUpdate = pbcDistance (
+            position,
+            mPrevPosition[bloc][atm]
+          ).modulo2() >= mAtomsSkin * mAtomsSkin;
         updatedPos[bloc].push_back (position);
       }
       // update positions if needed
       if (doUpdate) {
-        mPrevPosition = updatedPos;
-        mBlockAtoms[bloc]->update(mPrevPosition[bloc]);
+        mPrevPosition = std::move (updatedPos);
+        mBlockAtoms[bloc]->update (mPrevPosition[bloc]);
         if (getStep() % 50000 == 0 && bloc == 0) {
-          log << "  Step " << getStep() << " nl updated for block "
-              << bloc + 1 << ": " << mBlockAtoms[bloc]->size() << "\n";
+          log << "  Step " << getStep() << " nl updated: "
+              << mBlockAtoms[bloc]->size() << "\n";
         }
       }
     } // for each block
@@ -611,24 +616,28 @@ inline Vector PIVwip::distanceAB (const Vector& A, const Vector& B)
 //---------------------------------------------------------
 void PIVwip::calculate()
 {
-  std::vector<std::vector<double>> currentPIV (mBlocks);
-  std::vector<std::vector<int>> atmI0 (mBlocks);
-  std::vector<std::vector<int>> atmI1 (mBlocks);
-  std::vector<std::vector<int>> atmPrecI0 (mPrecision);
-  std::vector<std::vector<int>> atmPrecI1 (mPrecision);
+  auto currentPIV = std::vector <std::vector <double>> (mBlocks);
+  auto atmI0 = std::vector <std::vector <int>> (mBlocks);
+  auto atmI1 = std::vector <std::vector <int>> (mBlocks);
+  auto atmPrecI0 = std::vector <std::vector <int>> (mPrecision);
+  auto atmPrecI1 = std::vector <std::vector <int>> (mPrecision);
   int stride = 1;
   int rank = 0;
 
+  // get number of processors and current processor number
   if (!mSerial) {
     stride = comm.Get_size();
     rank = comm.Get_rank();
+  }
+  
+  // compute volume factor
+  if (mScaleVolume) {
+    mVolumeFactor = cbrt (mVolume0 / getBox().determinant());
   }
 
   ///////////////////////////////////////////////////////////////////
   // Transform (and sort) the rPIV before starting the dynamics
   if (mFirstStep || mComputeDerivatives) {
-    // Calculate the volume scaling factor
-    
     // Set switching function parameters
     log << "Switching Function Parameters \n";
     mSwitchFunc.resize(mBlocks);
@@ -647,8 +656,12 @@ void PIVwip::calculate()
         Tools::convert(r0, sR0);
         // computing new r0
         r0 *= mVolumeFactor;
-        auto pos = mSwitchData[bloc].find("R_0");
-        mSwitchData[bloc].replace(pos + 4, sR0.size(), std::to_string(r0));
+        auto pos = mSwitchData[bloc].find ("R_0");
+        mSwitchData[bloc].replace(
+          pos + 4,
+          sR0.size(),
+          std::to_string (r0)
+        );
       }
       mSwitchFunc[bloc].set(mSwitchData[bloc], errors);
       if (errors.length() != 0){
@@ -713,7 +726,7 @@ void PIVwip::calculate()
 
   ///////////////////////////////////////////////////////////////////
   // Do the sorting with a stride defined by updatePIV 
-  if (getStep() % mUpdateStride == 0 || mComputeDerivatives || mFirstStep) {
+  if (getStep() % mUpdateStride == 0 || mFirstStep || mComputeDerivatives) {
     if (mComputeDerivatives) {
       log << " Step " << getStep() << "  Computing Derivatives NON-SORTED PIV \n";
     }
@@ -738,8 +751,7 @@ void PIVwip::calculate()
         mPosCOM[i][1] = 0.;
         mPosCOM[i][2] = 0.;
         for (auto& atom : mBlockAtomCOM[i]->getFullAtomList()) {
-          mPosCOM[i] += mMassFactor[atom.index()] 
-            * getPosition (atom.index());
+          mPosCOM[i] += mMassFactor[atom.index()] * getPosition (atom.index());
         }
       }
     }
@@ -762,8 +774,8 @@ void PIVwip::calculate()
 
         // If we have N cores and Na atoms, we need (Na/N + 1) process by cores
         for (unsigned atm = rank; atm < mBlockAtoms[bloc]->size(); atm += stride) {
-          unsigned i0 = (mBlockAtoms[bloc]->getClosePairAtomNumber(atm).first).index();
-          unsigned i1 = (mBlockAtoms[bloc]->getClosePairAtomNumber(atm).second).index();
+          auto i0 = (mBlockAtoms[bloc]->getClosePairAtomNumber(atm).first).index();
+          auto i1 = (mBlockAtoms[bloc]->getClosePairAtomNumber(atm).second).index();
           Vector position0, position1;
           if (mDoCom) {
             position0 = mPosCOM[i0];
@@ -903,8 +915,8 @@ void PIVwip::calculate()
         log.printf ("%6s%6s%12s%12s%36s\n","     i","     j", "    c-PIV   ",
                    "    r-PIV   ","   i-j distance vector       ");
         for (unsigned i = 0; i < limit; i++) {
-          unsigned i0 = 0;
-          unsigned i1 = 0;
+          auto i0 = unsigned (0);
+          auto i1 = unsigned (0);
           if (mDoSort[bloc]) {
             i0 = atmI0[bloc][i];
             i1 = atmI1[bloc][i];
@@ -951,10 +963,10 @@ void PIVwip::calculate()
       }
     }
     // compute PIV-PIV distance and derivatives for each reference
-    unsigned i0 = 0;
-    unsigned i1 = 0;
-    double dm = 0;
-    double tPIV = 0;
+    auto i0 = unsigned (0);
+    auto i1 = unsigned (0);
+    auto dm = double (0.);
+    auto tPIV = double (0.);
     for (unsigned ref = 0; ref < mRefPIV.size(); ref++) {
       mDistancePIV[ref] = 0.;
       // Re-compute atomic distances for derivatives and compute PIV-PIV distance
@@ -1081,6 +1093,7 @@ void PIVwip::calculate()
     Value* pValDistance = getPntrToComponent ("d" + std::to_string (ref + 1));
     pValDistance->set (mDistancePIV[ref]);
   }
+  mFirstStep = false;
 } // end of calculate
 } // close namespace piv
 } // close namespace PLMD
