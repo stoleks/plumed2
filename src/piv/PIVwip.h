@@ -66,7 +66,6 @@ REF_FILE2=Ref2.pdb
 REF_FILE3=Ref2.pdb
 ATOMTYPES=A,B,C
 SFACTOR=0.3,0.5,1.0,0.2,0.2,0.2
-SORT=1,1,1,1,1,1
 SWITCH1={RATIONAL R_0=0.6 MM=12 NN=4}
 SWITCH2={RATIONAL R_0=0.4 MM=10 NN=5}
 SWITCH3={RATIONAL R_0=0.4 MM=10 NN=5}
@@ -104,7 +103,6 @@ REF_FILE2=Ref2.pdb
 ATOMTYPES=A,B
 ONLYDIRECT
 SFACTOR=1.0,0.2
-SORT=1,1
 SWITCH1={RATIONAL R_0=0.6 MM=12 NN=4}
 SWITCH2={RATIONAL R_0=0.5 MM=10 NN=5}
 NL_CUTOFF=1.2,1.2
@@ -212,7 +210,7 @@ private:
   Tensor mVirial;
   PtrNeighborList mBlockAtomsAll;
   std::vector<bool> mDoSort;
-  std::vector<double> mBlockFactor, m_r00;
+  std::vector<double> mBlockFactor;
   std::vector<double> mMassFactor;
   std::vector<double> mDistancePIV;
   std::vector<Vector> mPosCOM;

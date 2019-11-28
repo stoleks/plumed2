@@ -181,7 +181,6 @@ void PIVwip::parseOptions (
   log << "There are " << mBlocks << " PIV blocks.\n";
 
   // resize all vector according to mBlocks
-  m_r00.resize (mBlocks);
   mSwitchData.resize (mBlocks); 
   mPrevPosition.resize (mBlocks);
     
@@ -201,20 +200,17 @@ void PIVwip::parseOptions (
       << ", shell=" << mAtomsSkin << "\n";
 
   // By default we sort all blocks
-  auto doSort = std::vector<unsigned> (mBlocks, 1);
+  mDoSort.resize (mBlocks, true);
   if (keywords.exists ("SORT")) {
+    auto doSort = std::vector <unsigned> (mBlocks, 1);
     parseVector ("SORT", doSort);
-    for (const auto& sort : doSort) {
-      mDoSort.push_back (!(sort == 0 || mComputeDerivatives));
-    }
-    for (unsigned i = 0; i < mDoSort.size (); i++) {
-      mDoSort[i] ? log << "Sort" : log << "Don't sort";
-      log << " block " << i + 1 << "\n";
-    }
-  } else {
     for (unsigned bloc = 0; bloc < mBlocks; bloc++) {
-      mDoSort.push_back (true);
+      mDoSort[bloc] = (!(doSort[bloc] == 0 || mComputeDerivatives));
     }
+  }
+  for (unsigned bloc = 0; bloc < mBlocks; bloc++) {
+    mDoSort[bloc] ? log << "Sort " : log << "Don't sort ";
+    log << "block " << bloc + 1 << "\n";
   }
 
   // PIV scaled option
@@ -557,7 +553,6 @@ void PIVwip::initializeSwitchingFunction (bool doScaleVolume)
              + std::to_string (bloc + 1)
              + " keyword : " + errors );
     }
-    m_r00[bloc] = mSwitchFunc[bloc].get_r0();
     log << "  Swf: " << bloc + 1 << "  r0 = "
         << (mSwitchFunc[bloc].description()).c_str() << " \n";
   }
