@@ -286,13 +286,16 @@ void PIVwip::registerKeywords (Keywords& keys)
   );
   keys.addFlag (
     "COM", false,
-    "Use centers of mass of groups of atoms instead of atoms as specified in the .pdb file");
+    "Use centers of mass of groups of atoms instead of atoms as specified in the .pdb file"
+  );
   keys.addFlag (  
     "ONLYCROSS", false,
-    "Use only cross-terms in adjancy matrix (A-B, A-C, B-C ...)");
+    "Use only cross-terms in adjancy matrix (A-B, A-C, B-C ...)"
+  );
   keys.addFlag (
     "ONLYDIRECT", false,
-    "Use only direct-terms in adjancy matrix (A-A, B-B, ...)");
+    "Use only direct-terms in adjancy matrix (A-A, B-B, ...)"
+  );
   keys.addFlag (
     "DERIVATIVES", false,
     "Activate computation of the PIV for every class"
@@ -304,10 +307,11 @@ void PIVwip::registerKeywords (Keywords& keys)
   );
   keys.addFlag (
     "TIMER", false,
-    "Perform timing analysis on heavy loops to profile code - it's a debug option.");
+    "Perform timing analysis on heavy loops to profile code - it's a debug option."
+  );
   keys.reset_style ("SWITCH", "compulsory");
   componentsAreNotOptional (keys);
-  // output
+  // output we add d1,...,d5 to avoid warnings in typical use case
   keys.addOutputComponent (
     "lambda", "default",
     "Lambda for pathCV such that: lambda * D_12 = 2.3"
@@ -327,6 +331,10 @@ void PIVwip::registerKeywords (Keywords& keys)
   keys.addOutputComponent (
     "d4", "default",
     "PIV distance between 4th reference and current state."
+  );
+  keys.addOutputComponent (
+    "d5", "default",
+    "PIV distance between 5th reference and current state."
   );
 }
 
