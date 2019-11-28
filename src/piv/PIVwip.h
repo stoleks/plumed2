@@ -150,6 +150,13 @@ private:
          const Vector& A,
          const Vector& B);
   /**
+   * called at first step to initialize switching
+   * functions, references and neighbors list
+   */
+  void initializeSwitchingFunction (bool doScaleVolume = true);
+  void initializeReferencePIV ();
+  void initializeNeighborList ();
+  /**
    * called each step to update neighbor list
    */
   void updateNeighborList ();
