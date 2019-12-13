@@ -209,9 +209,9 @@ void PIV::parseOptions (
   }
 
   // PIV scaled option
-  mBlockFactor = std::vector<double> (mBlocks, 1.);
+  mScalingBlockFactor = std::vector<double> (mBlocks, 1.);
   if (keywords.exists ("SFACTOR")) {
-    parseVector ("SFACTOR", mBlockFactor);
+    parseVector ("SFACTOR", mScalingBlockFactor);
   }
 
   // read parameters of switching functions 
@@ -223,7 +223,7 @@ void PIV::parseOptions (
   }
   // et-up it here only if computing derivatives option is set
   if (mComputeDerivatives) {
-    initializeSwitchingFunction (false);
+    initializeSwitchingFunction (); // (false);
   }
 }
 
@@ -407,16 +407,7 @@ void PIV::parseReferences (
           pairDist = delta (position0, position1);
         }
         // transform + sort are done at first timestep to solve the r0 def issue
-        if (mComputeDerivatives) {
-          double df = 0.;
-          blockRefPIV.push_back (
-            mSwitchFunc[bloc].calculate (
-              pairDist.modulo() * mVolumeFactor, df
-            )
-          );
-        } else {
-          blockRefPIV.push_back (pairDist.modulo () * mVolumeFactor);
-        }
+        blockRefPIV.push_back (pairDist.modulo () * mVolumeFactor);
       }
       refPIV.push_back (blockRefPIV);
     }
@@ -614,7 +605,7 @@ void PIV::initializeReferencePIV ()
       double coord = mRefPIV[last][bloc][atm] 
                      - mRefPIV[0][bloc][mRefPIV[0][bloc].size() 
                                             - mRefPIV[last][bloc].size() + atm];
-      distance += mBlockFactor[bloc] * coord * coord;
+      distance += mScalingBlockFactor[bloc] * coord * coord;
     }
   }
   double lambda = 2.3 / distance;
@@ -768,7 +759,7 @@ void PIV::calculate()
 
   ///////////////////////////////////////////////////////////////////
   // get number of processors and current processor number
-  if (!mSerial) {
+  if (!mSerial && comm.initialized ()) {
     stride = comm.Get_size();
     rank = comm.Get_rank();
   }
@@ -852,7 +843,7 @@ void PIV::calculate()
         if (mTimer) stopwatch.stop("1 Build currentPIV");
         if (mTimer) stopwatch.start("2 Sort currentPIV");
 
-        if (!mSerial) {
+        if (!mSerial && comm.initialized ()) {
           // Vectors keeping track of the dimension and the starting-position 
           // of the rank-specific pair vector in the big pair vector.
           std::vector<int> vecDimension(stride, 0);
@@ -962,19 +953,22 @@ void PIV::calculate()
   ///////////////////////////////////////////////////////////////////
   // compute derivatives 
   if (getStep() % mUpdateStride == 0) {
-    Vector distance;
-    auto dfunc = double (0.);
-    // set to zero PIVdistance, derivatives and virial when they are calculated
-    for (unsigned j = 0; j < mDerivatives.size(); j++) {
-      for (unsigned k = 0; k < 3; k++) {
-        mDerivatives[j][k] = 0.;
-        if (j < 3) mVirial[j][k] = 0.;
-      }
-    }
-    // compute PIV-PIV distance and derivatives for each reference
-    auto dm = double (0.);
-    auto tPIV = double (0.);
     for (unsigned ref = 0; ref < mRefPIV.size(); ref++) {
+      auto dfunc = double (0.);
+      // set to zero PIVdistance, derivatives and virial when they are calculated
+      for (unsigned j = 0; j < mDerivatives.size(); j++) {
+        for (unsigned k = 0; k < 3; k++) {
+          mDerivatives[j][k] = 0.;
+        }
+      }
+      for (unsigned i = 0; i < 3; i++) {
+        for (unsigned j = 0; j < 3; j++) {
+          mVirial[i][j] = 0.;
+        }
+      }
+      // compute PIV-PIV distance and derivatives for each reference
+      auto dm = double (0.);
+      auto tPIV = double (0.);
       mDistancePIV[ref] = 0.;
       // Re-compute atomic distances for derivatives and compute PIV-PIV distance
       for (unsigned bloc = 0; bloc < mBlocks; bloc++) {
@@ -988,41 +982,42 @@ void PIV::calculate()
         auto procByCore = static_cast<unsigned> (limit / stride + 1);
         for (unsigned i = rank * procByCore; (i < ((rank + 1) * procByCore)) && (i < limit); i++) {
         */
-        for (unsigned i = rank; i < limit; i += stride) {
+        for (unsigned atm = rank; atm < limit; atm += stride) {
           auto i0 = unsigned (0);
           auto i1 = unsigned (0);
           // recompute PIV only once
-          if (ref == 0) {
-            if (mDoSort[bloc]) {
-              i0 = atmI0[bloc][i];
-              i1 = atmI1[bloc][i];
-            } else {
-              i0 = (mBlockAtoms[bloc]->getClosePairAtomNumber(i).first).index();
-              i1 = (mBlockAtoms[bloc]->getClosePairAtomNumber(i).second).index();
-            }
-            auto position0 = atomPosition (i0);
-            auto position1 = atomPosition (i1);
-            distance = distanceAB (position0, position1);
-            dfunc = 0.;
-            // this is needed for dfunc and dervatives
-            dm = distance.modulo();
-            tPIV = mSwitchFunc[bloc].calculate (dm * mVolumeFactor, dfunc);
+          if (mDoSort[bloc]) {
+            i0 = atmI0[bloc][atm];
+            i1 = atmI1[bloc][atm];
+          } else {
+            i0 = (mBlockAtoms[bloc]->getClosePairAtomNumber(atm).first).index();
+            i1 = (mBlockAtoms[bloc]->getClosePairAtomNumber(atm).second).index();
           }
+          auto position0 = atomPosition (i0);
+          auto position1 = atomPosition (i1);
+          auto distance = distanceAB (position0, position1);
+          dfunc = 0.;
+          // this is needed for dfunc and dervatives
+          dm = distance.modulo();
+          tPIV = mSwitchFunc[bloc].calculate (dm * mVolumeFactor, dfunc);
 
           // PIV distance
           double coord = 0.;
           if (!mDoSort[bloc] || mComputeDerivatives) {
-            coord = tPIV - mRefPIV[ref][bloc][i];
+            coord = tPIV - mRefPIV[ref][bloc][atm];
           } else {
-            coord = currentPIV[bloc][i] 
-                    - mRefPIV[ref][bloc][mRefPIV[ref][bloc].size() 
-                    - currentPIV[bloc].size() + i];
+            coord = currentPIV[bloc][atm] - mRefPIV[ref][bloc][
+                mRefPIV[ref][bloc].size() 
+                - currentPIV[bloc].size() + atm
+              ];
           }
           // Calculate derivatives, virial, and variable = sum_j (scaling[j] *(currentPIV-rPIV)_j^2)
           // WARNING: dfunc=dswf/(mVolumeFactor * dm)  (this may change in future Plumed versions)
-          double tmp = 2. * mBlockFactor[bloc] * coord
+          double tmp = 2. * mScalingBlockFactor[bloc] * coord
                        * mVolumeFactor*mVolumeFactor * dfunc;
           Vector tempDeriv = tmp * distance;
+          log.printf ("Der: %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f \n",
+                      mScalingBlockFactor [bloc], coord, mVolumeFactor, dfunc, distance.modulo(), tPIV, mRefPIV[ref][bloc][atm]);
           // 0.5 * (x_i - x_k) * f_ik         (force on atom k due to atom i)
           if (mDoCom) {
             Vector dist;
@@ -1057,6 +1052,12 @@ void PIV::calculate()
               mVirial += 0.25 * mMassFactor[x1] * Tensor (dist, tempDeriv);
             } // loop on second atom of each pair
           } else {
+            /*
+            log << "scaling: " << mScalingBlockFactor[bloc] << ", coord: " << coord
+                << ", volFactor: " << mVolumeFactor << ", dfunc: " << dfunc
+                << ", dm: " << dm << ", tmp deriv: " << tempDeriv << ", tmp: " << tmp
+                << " derivatives i0 & i1: " << mDerivatives[i0] << " " << mDerivatives[i1] << "\n";
+            */
             mDerivatives[i0] -= tempDeriv;
             mDerivatives[i1] += tempDeriv;
             mVirial -= tmp * Tensor (distance, distance);
@@ -1064,11 +1065,11 @@ void PIV::calculate()
           if (mScaleVolume) {
             mVirial += 1./3. * tmp * dm*dm * Tensor::identity();
           }
-          mDistancePIV[ref] += mBlockFactor[bloc] * coord*coord;
+          mDistancePIV[ref] += mScalingBlockFactor[bloc] * coord*coord;
         } // loop on atoms-atoms pairs
       } // loop on block
 
-      if (!mSerial) {
+      if (!mSerial && comm.initialized ()) {
         comm.Barrier();
         comm.Sum(&mDistancePIV[ref], 1);
         if (!mDerivatives.empty()) {
@@ -1093,7 +1094,7 @@ void PIV::calculate()
   }
   // update variables
   for (unsigned ref = 0; ref < mRefPIV.size(); ref++) {
-    Value* pValDistance = getPntrToComponent ("d" + std::to_string (ref + 1));
+    auto pValDistance = getPntrToComponent ("d" + std::to_string (ref + 1));
     pValDistance->set (mDistancePIV[ref]);
   }
   mFirstStep = false;

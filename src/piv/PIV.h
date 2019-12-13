@@ -221,7 +221,7 @@ private:
   Tensor mVirial;
   PtrNeighborList mBlockAtomsAll;
   std::vector<bool> mDoSort;
-  std::vector<double> mBlockFactor;
+  std::vector<double> mScalingBlockFactor;
   std::vector<double> mMassFactor;
   std::vector<double> mDistancePIV;
   std::vector<Vector> mPosCOM;
