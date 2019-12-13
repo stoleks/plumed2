@@ -100,16 +100,15 @@ void PIV::parseOptions (
 {
   auto onlyCross = false;
   auto onlyDirect = false;
-  auto noPbc = !mPBC;
-  parse ("VOLUME", mVolume0);
+  auto noPBC = !mPBC;
   parse ("NL_CUTOFF", neighborCut);
   parse ("NL_STRIDE", neighborStride);
   parse ("NL_SKIN", mAtomsSkin);
+  parseFlag ("VOLUME", mScaleVolume);
   parseFlag ("TEST", mTest);
-  parseFlag ("NOPBC", noPbc);
+  parseFlag ("NOPBC", noPBC);
   parseFlag ("TIMER", mTimer);
   parseFlag ("SERIAL", mSerial);
-  // parseFlag ("NO_NLIST", noNeighbor);
   parseFlag ("COM", mDoCom);
   parseFlag ("ONLYCROSS", onlyCross);
   parseFlag ("ONLYDIRECT", onlyDirect);
@@ -131,7 +130,7 @@ void PIV::parseOptions (
     error ("Precision must be => 2");
   }
   // PBC option
-  mPBC = !noPbc;
+  mPBC = !noPBC;
   if (mPBC) {
     log << "Using Periodic Boundary Conditions\n";
   } else  {
@@ -156,10 +155,6 @@ void PIV::parseOptions (
   // Center of Mass option
   if (mDoCom){
     log << "Building PIV using COMs\n";
-  }
-  // Volume Scaling option
-  if (mVolume0 > 0) {
-    mScaleVolume = true;
   }
   // PIV direct and cross blocks option
   if (onlyCross && onlyDirect) {
@@ -243,19 +238,23 @@ void PIV::parseReferences (
   const unsigned neighborStride,
   const std::vector <std::string>& atomTypes)
 {
+  // read all reference files and compute mVolume0
   bool readAllRef = false;
-  auto refIndex = unsigned (0);
+  auto referenceCount = unsigned (0);
+  auto referencePBC = std::vector <Pbc> ();
+  auto referencePDB = std::vector <PDB> ();
+  mVolume0 = 0;
   while (!readAllRef) {
     // set-up opening of the reference file
     std::string referenceFile; 
-    parseNumbered ("REF_FILE", refIndex + 1, referenceFile);
+    parseNumbered ("REF_FILE", referenceCount + 1, referenceFile);
 
     // if file is empty we stop the procedure
     readAllRef = referenceFile.empty();
     if (readAllRef) break;
 
     // opening of the reference PBD file
-    log << "\n----- Reference " << refIndex + 1 << " -----\n";
+    log << "\n----- Reference " << referenceCount + 1 << " -----\n";
     auto myPDB = PDB ();
     auto file = fopen (referenceFile.c_str(), "r");
     if (file != NULL) {
@@ -338,25 +337,38 @@ void PIV::parseReferences (
         }
       }
     }
-
-    //build box vectors and correct for pbc
+    // build box vectors
     log << "Building the box from PDB data ... \n";
-    Tensor box = myPDB.getBoxVec();
+    auto box = myPDB.getBoxVec();
     log << "  Done! A,B,C vectors in Cartesian space:  \n";
     log.printf ("  A:  %12.6f%12.6f%12.6f\n", box[0][0], box[0][1], box[0][2]);
     log.printf ("  B:  %12.6f%12.6f%12.6f\n", box[1][0], box[1][1], box[1][2]);
     log.printf ("  C:  %12.6f%12.6f%12.6f\n", box[2][0], box[2][1], box[2][2]);
     log << "Changing the PBC according to the new box \n";
-    Pbc myPbc;
-    myPbc.setBox (box);
-    log << "The box volume is " << myPbc.getBox().determinant() << " \n";
+    // set PBC box and compute reference volume
+    auto myPBC = Pbc();
+    myPBC.setBox (box);
+    mVolume0 += myPBC.getBox().determinant();
+    log << "The box volume is " << myPBC.getBox().determinant() << " \n";
+    // count number of references and save pdb and pbc
+    referencePBC.push_back (myPBC);
+    referencePDB.push_back (myPDB);
+    referenceCount++;
+  } // while reading reference files
 
+  // compute volume factor as average of reference's volume
+  mVolume0 /= static_cast <double> (referenceCount);
+  log << "\nAverage scaling volume V_0 = " << mVolume0 << "\n";
+
+  // compute reference PIV
+  for (unsigned ref = 0; ref < referenceCount; ref++) {
     //Compute scaling factor
+    log << "For reference " << ref;
     if (mScaleVolume) {
-      mVolumeFactor = cbrt (mVolume0 / myPbc.getBox().determinant());
-      log << "Scaling atom distances by  " << mVolumeFactor << " \n";
+      mVolumeFactor = cbrt (mVolume0 / referencePBC [ref].getBox().determinant());
+      log << ", scaling atom distances by  " << mVolumeFactor << " \n";
     } else {
-      log << "Using unscaled atom distances \n";
+      log << ", using unscaled atom distances \n";
     }
 
     // build COMs from positions if requested
@@ -367,7 +379,7 @@ void PIV::parseReferences (
         mPosCOM[i][2] = 0.; 
         for (const auto& atom : mBlockAtomCOM[i]->getFullAtomList()) {
           auto index = atom.index ();
-          mPosCOM[i] += mMassFactor[index] * myPDB.getPositions()[index];
+          mPosCOM[i] += mMassFactor[index] * referencePDB [ref].getPositions()[index];
         }
       }
     }
@@ -385,14 +397,14 @@ void PIV::parseReferences (
           position0 = mPosCOM[i0];
           position1 = mPosCOM[i1];
         } else {
-          position0 = myPDB.getPositions()[i0];
-          position1 = myPDB.getPositions()[i1];
+          position0 = referencePDB [ref].getPositions ()[i0];
+          position1 = referencePDB [ref].getPositions ()[i1];
         }
         Vector pairDist;
         if (mPBC) {
-          pairDist = myPbc.distance(position0, position1);
+          pairDist = referencePBC [ref].distance (position0, position1);
         } else {
-          pairDist = delta(position0, position1);
+          pairDist = delta (position0, position1);
         }
         // transform + sort are done at first timestep to solve the r0 def issue
         if (mComputeDerivatives) {
@@ -409,34 +421,35 @@ void PIV::parseReferences (
       refPIV.push_back (blockRefPIV);
     }
     mRefPIV.push_back (refPIV);
-    
-    // print reference
+  } // loop over the number of references
+  
+  // print reference
+  for (unsigned ref = 0; ref < referenceCount; ref++) {
     for (unsigned bloc = 0; bloc < mBlocks; bloc++) {
-      log << "reference PIV block " << bloc + 1 << " has size: " 
-          << mRefPIV [refIndex] [bloc].size() << " over a total of "
+      log << "Reference " << ref + 1 << ", PIV block " << bloc + 1 << " has size: " 
+          << mRefPIV [ref] [bloc].size() << " over a total of "
            << mBlockAtoms [bloc]->size() << " atoms-atoms pair\n";
       if (mComputeDerivatives) {
         if (mDoSort[bloc]) {
           std::sort(
-            std::begin (mRefPIV [refIndex][bloc]),
-            std::end (mRefPIV[refIndex][bloc])
+            std::begin (mRefPIV [ref][bloc]),
+            std::end (mRefPIV [ref][bloc])
           );
         }
         unsigned lmt0 = 0;
         unsigned lmt1 = 0;
-        for (unsigned atm = 0; atm < mRefPIV[refIndex][bloc].size(); atm++) {
-          if (mRefPIV[refIndex][bloc][atm] > 0.9) { lmt1++; }
-          if (mRefPIV[refIndex][bloc][atm] < 0.1) { lmt0++; }
+        for (unsigned atm = 0; atm < mRefPIV [ref][bloc].size(); atm++) {
+          if (mRefPIV [ref][bloc][atm] > 0.9) { lmt1++; }
+          if (mRefPIV [ref][bloc][atm] < 0.1) { lmt0++; }
         }
         if (mComputeDerivatives && bloc == 0) {
           log << "  PIV  |  block   |     Size      |     "
               << "Zeros     |     Ones      |" << " \n";
         }
         log.printf ("       |%10i|%15i|%15i|%15i|\n", bloc,
-                    mRefPIV[refIndex][bloc].size(), lmt0, lmt1);
+                    mRefPIV [ref][bloc].size(), lmt0, lmt1);
       } // if we compute derivatives
     } // loop over the number of blocks
-    refIndex++;
   } // loop over the number of references
   log << "\n";
   mDistancePIV.resize (mRefPIV.size());
@@ -649,10 +662,8 @@ void PIV::updateNeighborList ()
         position = getPosition(atomsOfBlock[atm].index());
       }
       doUpdate = doUpdate ||
-        pbcDistance (
-          position,
-          mPrevPosition[bloc][atm]
-        ).modulo2() >= mAtomsSkin * mAtomsSkin;
+        pbcDistance (position, mPrevPosition[bloc][atm]).modulo2()
+        >= mAtomsSkin * mAtomsSkin;
       updatedPos[bloc].push_back (position);
     }
     // update positions if needed
@@ -668,15 +679,78 @@ void PIV::updateNeighborList ()
 }
 
 //---------------------------------------------------------
+// PRINT CURRENT AND REFERENCE PIV (for test purpose) 
+//---------------------------------------------------------
+void PIV::printCurrentAndReferencePIV (
+  const std::vector <std::vector <int>>& atomIndex0,
+  const std::vector <std::vector <int>>& atomIndex1,
+  const std::vector <std::vector <double>>& currentPIV)
+{
+  for (unsigned ref = 0; ref < mRefPIV.size(); ref++) {
+    for (unsigned bloc = 0; bloc < mBlocks; bloc++) {
+      auto limit = unsigned (0);
+      if (mDoSort[bloc]) {
+        limit = currentPIV[bloc].size();
+      } else {
+        limit = mRefPIV[ref][bloc].size();
+      }
+      log.printf ("PIV Block:  %6i %12s %6i \n", bloc, "      Size:", limit);
+      log.printf ("%6s%6s%12s%12s%36s\n","     i","     j", "    c-PIV   ",
+                 "    r-PIV   ","   i-j distance vector       ");
+      for (unsigned i = 0; i < limit; i++) {
+        auto i0 = unsigned (0);
+        auto i1 = unsigned (0);
+        if (mDoSort[bloc]) {
+          i0 = atomIndex0[bloc][i];
+          i1 = atomIndex1[bloc][i];
+        } else {
+          i0 = (mBlockAtoms[bloc]->getClosePairAtomNumber(i).first).index();
+          i1 = (mBlockAtoms[bloc]->getClosePairAtomNumber(i).second).index();
+        }
+        auto position0 = atomPosition (i0);
+        auto position1 = atomPosition (i1);
+        auto distance = distanceAB (position0, position1);
+        auto dfunc = double (0.);
+        double cP, rP;
+        if (mDoSort[bloc]) {
+          cP = currentPIV[bloc][i];
+          rP = mRefPIV[ref][bloc][mRefPIV[ref][bloc].size() - currentPIV[bloc].size() + i];
+        } else {
+          cP = mSwitchFunc[bloc].calculate(distance.modulo() * mVolumeFactor, dfunc);
+          rP = mRefPIV[ref][bloc][i];
+        }
+        log.printf ("%6i%6i%12.6f%12.6f%12.6f%12.6f%12.6f\n",i0,i1,cP,rP,distance[0],distance[1],distance[2]);
+      }
+    }
+    log.printf ("This was a test, now exit \n");
+    exit();
+  }
+}
+
+//---------------------------------------------------------
 // DISTANCE 
 //---------------------------------------------------------
-Vector PIV::distanceAB (const Vector& A, const Vector& B)
+Vector PIV::distanceAB (
+  const Vector& A,
+  const Vector& B)
 {
   if (mPBC) {
     return pbcDistance (A, B);
   } else {
     return delta (A, B);
   }
+}
+
+//---------------------------------------------------------
+// ATOM POSITION 
+// return position for a given atom index
+//---------------------------------------------------------
+Vector PIV::atomPosition (const unsigned atom)
+{
+  if (mDoCom) {
+    return mPosCOM[atom];
+  }
+  return getPosition (atom);
 }
 
 //---------------------------------------------------------
@@ -758,14 +832,8 @@ void PIV::calculate()
         for (unsigned atm = rank; atm < mBlockAtoms[bloc]->size(); atm += stride) {
           auto i0 = (mBlockAtoms[bloc]->getClosePairAtomNumber(atm).first).index();
           auto i1 = (mBlockAtoms[bloc]->getClosePairAtomNumber(atm).second).index();
-          Vector position0, position1;
-          if (mDoCom) {
-            position0 = mPosCOM[i0];
-            position1 = mPosCOM[i1];
-          } else {
-            position0 = getPosition (i0);
-            position1 = getPosition (i1);
-          }
+          auto position0 = atomPosition (i0);
+          auto position1 = atomPosition (i1);
           auto pairDist = distanceAB (position0, position1);
           auto df = double (0.);
           // transform distances with Switching function 
@@ -882,53 +950,11 @@ void PIV::calculate()
   ///////////////////////////////////////////////////////////////////
   // This test may be run by specifying the TEST keyword as input, it pritnts referencePIV and currentPIV and quits
   if (mTest) {
-    Vector distance;
-    auto dfunc = double (0.);
-    auto limit = unsigned (0);
-    for (unsigned ref = 0; ref < mRefPIV.size(); ref++) {
-      for (unsigned bloc = 0; bloc < mBlocks; bloc++) {
-        if (mDoSort[bloc]) {
-          limit = currentPIV[bloc].size();
-        } else {
-          limit = mRefPIV[ref][bloc].size();
-        }
-        log.printf ("PIV Block:  %6i %12s %6i \n", bloc, "      Size:", limit);
-        log.printf ("%6s%6s%12s%12s%36s\n","     i","     j", "    c-PIV   ",
-                   "    r-PIV   ","   i-j distance vector       ");
-        for (unsigned i = 0; i < limit; i++) {
-          auto i0 = unsigned (0);
-          auto i1 = unsigned (0);
-          if (mDoSort[bloc]) {
-            i0 = atmI0[bloc][i];
-            i1 = atmI1[bloc][i];
-          } else {
-            i0 = (mBlockAtoms[bloc]->getClosePairAtomNumber(i).first).index();
-            i1 = (mBlockAtoms[bloc]->getClosePairAtomNumber(i).second).index();
-          }
-          Vector position0,position1;
-          if (mDoCom) {
-            position0 = mPosCOM[i0];
-            position1 = mPosCOM[i1];
-          } else {
-            position0 = getPosition(i0);
-            position1 = getPosition(i1);
-          }
-          distance = distanceAB (position0, position1);
-          dfunc = 0.;
-          double cP, rP;
-          if (mDoSort[bloc]) {
-            cP = currentPIV[bloc][i];
-            rP = mRefPIV[ref][bloc][mRefPIV[ref][bloc].size() - currentPIV[bloc].size() + i];
-          } else {
-            cP = mSwitchFunc[bloc].calculate(distance.modulo() * mVolumeFactor, dfunc);
-            rP = mRefPIV[ref][bloc][i];
-          }
-          log.printf ("%6i%6i%12.6f%12.6f%12.6f%12.6f%12.6f\n",i0,i1,cP,rP,distance[0],distance[1],distance[2]);
-        }
-      }
-      log.printf ("This was a test, now exit \n");
-      exit();
-    }
+    printCurrentAndReferencePIV (
+      atmI0,
+      atmI1,
+      currentPIV
+    );
   }
   
   if (mTimer) stopwatch.start("4 Build For Derivatives");
@@ -974,14 +1000,8 @@ void PIV::calculate()
               i0 = (mBlockAtoms[bloc]->getClosePairAtomNumber(i).first).index();
               i1 = (mBlockAtoms[bloc]->getClosePairAtomNumber(i).second).index();
             }
-            Vector position0, position1;
-            if (mDoCom) {
-              position0 = mPosCOM[i0];
-              position1 = mPosCOM[i1];
-            } else {
-              position0 = getPosition(i0);
-              position1 = getPosition(i1);
-            }
+            auto position0 = atomPosition (i0);
+            auto position1 = atomPosition (i1);
             distance = distanceAB (position0, position1);
             dfunc = 0.;
             // this is needed for dfunc and dervatives

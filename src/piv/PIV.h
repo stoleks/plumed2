@@ -97,7 +97,7 @@ With the VOLUME keyword one scales the atom-atom distances by the cubic root of 
 \plumedfile
 PIV ...
 LABEL=piv
-VOLUME=12.15
+VOLUME
 REF_FILE1=Ref1.pdb
 REF_FILE2=Ref2.pdb
 ATOMTYPES=A,B
@@ -148,6 +148,10 @@ private:
          const Vector& A,
          const Vector& B);
   /**
+   * compute position of a pair of atoms indices
+   */
+  Vector atomPosition (const unsigned atom);
+  /**
    * called at first step to initialize switching
    * functions, references and neighbors list
    */
@@ -187,6 +191,13 @@ private:
          const std::vector <AtomNumber>& allAtomsList,
          const std::vector <std::vector <AtomNumber>>& pairList,
          const std::vector <std::vector <AtomNumber>>& comAtoms);
+  /**
+   * print current and reference PIV and their distance (for test)
+   */
+  void printCurrentAndReferencePIV (
+         const std::vector <std::vector <int>>& atomIndex0,
+         const std::vector <std::vector <int>>& atmoIndex1,
+         const std::vector <std::vector <double>>& currentPIV);
 private:
   ForwardDecl<Stopwatch> stopwatch_fwd;
   /// The stopwatch that times the different parts of the calculation
@@ -260,11 +271,6 @@ void PIV::registerKeywords (Keywords& keys)
     "by such block-specific factor"
   );
   keys.add (
-    "optional", "VOLUME",
-    "Scale atom-atom distances by the cubic root of the cell volume. "
-    "Input volume is used to scale the R_0 value of the switching function."
-  );
-  keys.add (
     "optional", "UPDATEPIV",
     "Update PIV every UPDATEPIV steps."
   );
@@ -279,6 +285,11 @@ void PIV::registerKeywords (Keywords& keys)
   keys.add (
     "optional", "NL_SKIN", 
     "Maximum atom displacement accepted for the neighbor lists update."
+  );
+  keys.addFlag (
+    "VOLUME", false,
+    "Scale atom-atom distances by the cubic root of the ratio of the current "
+    "cell volume and the average volume of the reference structures."
   );
   keys.addFlag (
     "TEST", false,
