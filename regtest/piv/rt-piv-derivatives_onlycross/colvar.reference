@@ -1,4 +1,4 @@
-#! FIELDS time parameter c1 c2
+#! FIELDS time parameter p1.d1 p2.d1
  0.000000 0          -6.211          -6.211
  0.000000 1           5.058           5.058
  0.000000 2          -1.831          -1.831

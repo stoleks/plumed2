@@ -591,28 +591,33 @@ void PIV::initializeReferencePIV ()
     } // for each block
   } // for each reference file
 
-  // we compute lambda
-  double distance = 0.;
-  for (unsigned bloc = 0; bloc < mBlocks; bloc++) {
-    unsigned size;
-    unsigned last = mRefPIV.size() - 1;
-    if (mRefPIV[0][bloc].size() > mRefPIV[last][bloc].size()) {
-      size = mRefPIV[last][bloc].size();
-    } else {
-      size = mRefPIV[0][bloc].size();
+  // we compute lambda if they are more than one reference
+  auto lambda = double (0.);
+  if (mRefPIV.size () > 1) {
+    auto distance = double (0.);
+    for (unsigned bloc = 0; bloc < mBlocks; bloc++) {
+      auto size = unsigned (0);
+      auto last = mRefPIV.size() - 1;
+      if (mRefPIV[0][bloc].size() > mRefPIV[last][bloc].size()) {
+        size = mRefPIV[last][bloc].size();
+      } else {
+        size = mRefPIV[0][bloc].size();
+      }
+      for (unsigned atm = 0; atm < size; atm++) {
+        auto coord = mRefPIV[last][bloc][atm] - mRefPIV[0][bloc][
+            mRefPIV[0][bloc].size()
+            - mRefPIV[last][bloc].size() + atm
+          ];
+        distance += mScalingBlockFactor[bloc] * coord * coord;
+      }
     }
-    for (unsigned atm = 0; atm < size; atm++) {
-      double coord = mRefPIV[last][bloc][atm] 
-                     - mRefPIV[0][bloc][mRefPIV[0][bloc].size() 
-                                            - mRefPIV[last][bloc].size() + atm];
-      distance += mScalingBlockFactor[bloc] * coord * coord;
-    }
+    lambda = 2.3 / distance;
+    log << "lambda=" << lambda << " d_1n=" << distance << "\n";
+  } else {
+    log << "There is only one reference so we cannot compute lambda.\n";
   }
-  double lambda = 2.3 / distance;
-  log << "lambda=" << lambda << " d_1n=" << distance << "\n";
-  Value* pValLambda = getPntrToComponent ("lambda");
+  auto pValLambda = getPntrToComponent ("lambda");
   pValLambda->set (lambda);
-
   log << "\n";
 }
 
@@ -954,7 +959,6 @@ void PIV::calculate()
   // compute derivatives 
   if (getStep() % mUpdateStride == 0) {
     for (unsigned ref = 0; ref < mRefPIV.size(); ref++) {
-      auto dfunc = double (0.);
       // set to zero PIVdistance, derivatives and virial when they are calculated
       for (unsigned j = 0; j < mDerivatives.size(); j++) {
         for (unsigned k = 0; k < 3; k++) {
@@ -996,7 +1000,7 @@ void PIV::calculate()
           auto position0 = atomPosition (i0);
           auto position1 = atomPosition (i1);
           auto distance = distanceAB (position0, position1);
-          dfunc = 0.;
+          auto dfunc = double (0.);
           // this is needed for dfunc and dervatives
           dm = distance.modulo();
           tPIV = mSwitchFunc[bloc].calculate (dm * mVolumeFactor, dfunc);
@@ -1013,11 +1017,9 @@ void PIV::calculate()
           }
           // Calculate derivatives, virial, and variable = sum_j (scaling[j] *(currentPIV-rPIV)_j^2)
           // WARNING: dfunc=dswf/(mVolumeFactor * dm)  (this may change in future Plumed versions)
-          double tmp = 2. * mScalingBlockFactor[bloc] * coord
+          auto tmp = 2. * mScalingBlockFactor[bloc] * coord
                        * mVolumeFactor*mVolumeFactor * dfunc;
-          Vector tempDeriv = tmp * distance;
-          log.printf ("Der: %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f \n",
-                      mScalingBlockFactor [bloc], coord, mVolumeFactor, dfunc, distance.modulo(), tPIV, mRefPIV[ref][bloc][atm]);
+          auto tempDeriv = tmp * distance;
           // 0.5 * (x_i - x_k) * f_ik         (force on atom k due to atom i)
           if (mDoCom) {
             Vector dist;
@@ -1052,12 +1054,6 @@ void PIV::calculate()
               mVirial += 0.25 * mMassFactor[x1] * Tensor (dist, tempDeriv);
             } // loop on second atom of each pair
           } else {
-            /*
-            log << "scaling: " << mScalingBlockFactor[bloc] << ", coord: " << coord
-                << ", volFactor: " << mVolumeFactor << ", dfunc: " << dfunc
-                << ", dm: " << dm << ", tmp deriv: " << tempDeriv << ", tmp: " << tmp
-                << " derivatives i0 & i1: " << mDerivatives[i0] << " " << mDerivatives[i1] << "\n";
-            */
             mDerivatives[i0] -= tempDeriv;
             mDerivatives[i1] += tempDeriv;
             mVirial -= tmp * Tensor (distance, distance);
