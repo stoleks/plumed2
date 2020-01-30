@@ -15,8 +15,8 @@ You should have received a copy of the GNU Lesser General Public License
 along with plumed.  If not, see <http://www.gnu.org/licenses/>.
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
 
-#ifndef PIV_WIP_H
-#define PIV_WIP_H
+#ifndef PIV_COM_H
+#define PIV_COM_H
 
 #include "colvar/Colvar.h"
 #include "colvar/ActionRegister.h"
@@ -124,13 +124,13 @@ When using PIV please cite \cite pipolo2017navigating .
 
 using PtrNeighborList = std::unique_ptr <NeighborList>;
 
-class PIV : public Colvar
+class PIVCOM : public Colvar
 {
 public:
   /**
    * parse parameters and set-up PIV calculation
    */
-  PIV (const ActionOptions&);
+  PIVCOM (const ActionOptions&);
   /**
    * compute PIV each step
    */
@@ -195,7 +195,8 @@ private:
          const double neighborCut, 
          const unsigned neighborStride,
          const std::vector <AtomNumber>& allAtomsList,
-         const std::vector <std::vector <AtomNumber>>& pairList);
+         const std::vector <std::vector <AtomNumber>>& pairList,
+         const std::vector <std::vector <AtomNumber>>& comAtoms);
   /**
    * print current and reference PIV and their distance (for test)
    */
@@ -228,9 +229,11 @@ private:
   std::vector<double> mScalingBlockFactor;
   std::vector<double> mMassFactor;
   std::vector<double> mDistancePIV;
+  std::vector<Vector> mPosCOM;
   std::vector<Vector> mDerivatives;
   std::vector<std::string> mSwitchData;
   std::vector<PtrNeighborList> mBlockAtoms;
+  std::vector<PtrNeighborList> mBlockAtomCOM;
   std::vector<SwitchingFunction> mSwitchFunc;
   // 2-dimensional vector (block, atoms)
   std::vector<std::vector <Vector>> mPrevPosition;
@@ -240,7 +243,7 @@ private:
 
 PLUMED_REGISTER_ACTION (PIV, "PIV")
 
-void PIV::registerKeywords (Keywords& keys)
+void PIVCOM::registerKeywords (Keywords& keys)
 {
   Colvar::registerKeywords (keys);
   // input 
@@ -297,6 +300,10 @@ void PIV::registerKeywords (Keywords& keys)
     "TEST", false,
     "Print actual and reference PIV, exit"
   );
+  keys.addFlag (
+    "COM", false,
+    "Use centers of mass of groups of atoms instead of atoms as specified in the .pdb file"
+  );
   keys.addFlag (  
     "ONLYCROSS", false,
     "Use only cross-terms in adjancy matrix (A-B, A-C, B-C ...)"
@@ -350,4 +357,4 @@ void PIV::registerKeywords (Keywords& keys)
 } // close namespace piv
 } // close namespace PLMD
 
-#endif // PIV_WIP_H
+#endif // PIV_COM_H

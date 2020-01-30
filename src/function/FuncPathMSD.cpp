@@ -217,7 +217,8 @@ FuncPathMSD::FuncPathMSD(const ActionOptions&ao):
   if (myname != "RMSD"
   && myname != "CONTACTMAP"
   && myname != "DISTANCE"
-  && myname != "PIV") {
+  && myname != "PIV"
+  && myname != "PIVCOM") {
     error("One or more of your arguments is not of RMSD/CONTACTMAP/DISTANCE/PIV type!!!");
   }
   for(unsigned i=1; i<getNumberOfArguments(); i++) {
