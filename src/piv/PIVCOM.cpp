@@ -1019,15 +1019,15 @@ void PIVCOM::calculate()
           }
 
           // loop on second atom of each pair
-          for (const auto& atom1 : atomBlock1) {
+          for (const auto& atom1 : atomsBlock1) {
             auto x1 = atom1.index();
             auto dist = Vector (0, 0, 0);
             auto position1 = getPosition (x1);
             mDerivatives[x1] += tempDeriv * mMassFactor[x1];
-            for (const auto& atom0 : atomBlock1) {
+            for (const auto& atom0 : atomsBlock1) {
               dist += distanceAB (position1, getPosition (atom0.index()) );
             }
-            for (const auto& atom0 : atomBlock0) {
+            for (const auto& atom0 : atomsBlock0) {
               dist += distanceAB (position1, getPosition (atom0.index()) );
             }
             mVirial += 0.25 * mMassFactor[x1] * Tensor (dist, tempDeriv);

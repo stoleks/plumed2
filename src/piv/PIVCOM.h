@@ -241,7 +241,7 @@ private:
   std::vector<std::vector <std::vector <double>>> mRefPIV;
 };
 
-PLUMED_REGISTER_ACTION (PIV, "PIV")
+PLUMED_REGISTER_ACTION (PIVCOM, "PIVCOM")
 
 void PIVCOM::registerKeywords (Keywords& keys)
 {
