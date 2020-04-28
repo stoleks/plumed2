@@ -222,13 +222,13 @@ private:
   double mVolume0;
   double mAtomsSkin;
   double mLambda;
-  Tensor mVirial;
+  std::vector<Tensor> mComponentVirial;
   PtrNeighborList mBlockAtomsAll;
   std::vector<bool> mDoSort;
   std::vector<double> mScalingBlockFactor;
   std::vector<double> mMassFactor;
   std::vector<double> mDistancePIV;
-  std::vector<Vector> mDerivatives;
+  std::vector<std::vector<Vector>> mComponentDerivatives;
   std::vector<std::string> mSwitchData;
   std::vector<PtrNeighborList> mBlockAtoms;
   std::vector<SwitchingFunction> mSwitchFunc;

@@ -73,17 +73,19 @@ PIV::PIV (const ActionOptions&ao):
   );
   // Plumed set-up
   checkRead();
-  // add N distance for the N reference states
+  // add N distance and derivatives for the N reference states
+  requestAtoms(mBlockAtomsAll->getFullAtomList());
+  mComponentDerivatives.resize (mRefPIV.size()); 
+  mComponentVirial.resize (mRefPIV.size()); 
   for (unsigned ref = 1; ref <= mRefPIV.size(); ref++) {
     addComponentWithDerivatives ("d" + std::to_string (ref));
     componentIsNotPeriodic ("d" + std::to_string (ref));
+    mComponentDerivatives[ref].resize (getNumberOfAtoms()); 
   }
   // add the lambda component for the path collective variables
   addComponent ("lambda");
   componentIsNotPeriodic ("lambda");
-  requestAtoms(mBlockAtomsAll->getFullAtomList());
-  // set size of derivative vector
-  mDerivatives.resize (getNumberOfAtoms()); 
+  log << "Ending PIV Constructor\n";
 }
 
 //---------------------------------------------------------
@@ -872,14 +874,14 @@ void PIV::calculate()
   if (getStep() % mUpdateStride == 0) {
     for (unsigned ref = 0; ref < mRefPIV.size(); ref++) {
       // set to zero PIVdistance, derivatives and virial when they are calculated
-      for (unsigned j = 0; j < mDerivatives.size(); j++) {
+      for (unsigned j = 0; j < mComponentDerivatives[ref].size(); j++) {
         for (unsigned k = 0; k < 3; k++) {
-          mDerivatives[j][k] = 0.;
+          mComponentDerivatives[ref][j][k] = 0.;
         }
       }
       for (unsigned i = 0; i < 3; i++) {
         for (unsigned j = 0; j < 3; j++) {
-          mVirial[i][j] = 0.;
+          mComponentVirial[ref][i][j] = 0.;
         }
       }
       // compute PIV-PIV distance and derivatives for each reference
@@ -935,11 +937,11 @@ void PIV::calculate()
                        * mVolumeFactor*mVolumeFactor * dfunc;
           auto tempDeriv = tmp * distance;
           // 0.5 * (x_i - x_k) * f_ik         (force on atom k due to atom i)
-          mDerivatives[i0] -= tempDeriv;
-          mDerivatives[i1] += tempDeriv;
-          mVirial -= tmp * Tensor (distance, distance);
+          mComponentDerivatives[ref][i0] -= tempDeriv;
+          mComponentDerivatives[ref][i1] += tempDeriv;
+          mComponentVirial[ref] -= tmp * Tensor (distance, distance);
           if (mScaleVolume) {
-            mVirial += 1./3. * tmp * dm*dm * Tensor::identity();
+            mComponentVirial[ref] += 1./3. * tmp * dm*dm * Tensor::identity();
           }
           mDistancePIV[ref] += mScalingBlockFactor[bloc] * coord*coord;
         } // loop on atoms-atoms pairs
@@ -948,10 +950,10 @@ void PIV::calculate()
       if (!mSerial && comm.initialized ()) {
         comm.Barrier();
         comm.Sum(&mDistancePIV[ref], 1);
-        if (!mDerivatives.empty()) {
-          comm.Sum (&mDerivatives[0][0], 3 * mDerivatives.size());
+        if (!mComponentDerivatives[ref].empty()) {
+          comm.Sum (&mComponentDerivatives[ref][0][0], 3 * mComponentDerivatives[ref].size());
         }
-        comm.Sum (&mVirial[0][0], 9);
+        comm.Sum (&mComponentVirial[ref][0][0], 9);
       }
     } // loop on the number of references
   } // if update_piv
@@ -963,15 +965,14 @@ void PIV::calculate()
     log << stopwatch;
   }
 
-  // Update derivatives, virial
-  setBoxDerivatives(mVirial);
-  for (unsigned i = 0; i < mDerivatives.size(); ++i) {
-    setAtomsDerivatives (i, mDerivatives[i]);
-  }
-  // update variables
+  // update variables, component derivatives and virial
   for (unsigned ref = 0; ref < mRefPIV.size(); ref++) {
     auto pValDistance = getPntrToComponent ("d" + std::to_string (ref + 1));
     pValDistance->set (mDistancePIV[ref]);
+    setBoxDerivatives (pValDistance,mComponentVirial[ref]);
+    for (unsigned i = 0; i < mComponentDerivatives[ref].size(); ++i) {
+      setAtomsDerivatives (pValDistance,i,mComponentDerivatives[ref][i]);
+    }
   }
   mFirstStep = false;
 } // end of calculate
