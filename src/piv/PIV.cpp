@@ -77,9 +77,9 @@ PIV::PIV (const ActionOptions&ao):
   requestAtoms(mBlockAtomsAll->getFullAtomList());
   mComponentDerivatives.resize (mRefPIV.size()); 
   mComponentVirial.resize (mRefPIV.size()); 
-  for (unsigned ref = 1; ref <= mRefPIV.size(); ref++) {
-    addComponentWithDerivatives ("d" + std::to_string (ref));
-    componentIsNotPeriodic ("d" + std::to_string (ref));
+  for (unsigned ref = 0; ref < mRefPIV.size(); ref++) {
+    addComponentWithDerivatives ("d" + std::to_string (ref + 1));
+    componentIsNotPeriodic ("d" + std::to_string (ref + 1));
     mComponentDerivatives[ref].resize (getNumberOfAtoms()); 
   }
   // add the lambda component for the path collective variables
@@ -946,7 +946,7 @@ void PIV::calculate()
           mDistancePIV[ref] += mScalingBlockFactor[bloc] * coord*coord;
         } // loop on atoms-atoms pairs
       } // loop on block
-
+      
       if (!mSerial && comm.initialized ()) {
         comm.Barrier();
         comm.Sum(&mDistancePIV[ref], 1);
@@ -969,10 +969,10 @@ void PIV::calculate()
   for (unsigned ref = 0; ref < mRefPIV.size(); ref++) {
     auto pValDistance = getPntrToComponent ("d" + std::to_string (ref + 1));
     pValDistance->set (mDistancePIV[ref]);
-    setBoxDerivatives (pValDistance,mComponentVirial[ref]);
-    for (unsigned i = 0; i < mComponentDerivatives[ref].size(); ++i) {
-      setAtomsDerivatives (pValDistance,i,mComponentDerivatives[ref][i]);
+    for (unsigned atm = 0; atm < mComponentDerivatives[ref].size(); atm++) {
+      setAtomsDerivatives (pValDistance, atm, mComponentDerivatives[ref][atm]);
     }
+    setBoxDerivatives (pValDistance, mComponentVirial[ref]);
   }
   mFirstStep = false;
 } // end of calculate
