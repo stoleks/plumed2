@@ -548,6 +548,7 @@ void PIV::initializeNeighborList ()
 {
   for (unsigned bloc = 0; bloc < mBlocks; bloc++) {
     const auto& atomsOfBlock = mBlockAtoms[bloc]->getFullAtomList ();
+    mPrevPosition[bloc].resize(0);
     for (unsigned atm = 0; atm < atomsOfBlock.size(); atm++) {
       auto position = getPosition (atomsOfBlock[atm].index());
       mPrevPosition[bloc].push_back (position);
