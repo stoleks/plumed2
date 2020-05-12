@@ -708,7 +708,7 @@ void PIV::calculate()
   ///////////////////////////////////////////////////////////////////
   // Transform (and sort) the rPIV before starting the dynamics
   // for first step neighborlist = actual position and build ref PIV
-  if (mFirstStep || mComputeDerivatives) {
+  if (mFirstStep) {
     initializeSwitchingFunction ();
     initializeReferencePIV ();
     initializeNeighborList ();
